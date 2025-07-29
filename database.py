@@ -179,13 +179,13 @@ class JSONDatabase:
     def get_doctors_by_specialization(self, specialization: str) -> List[Dict]:
         """Get doctors by specialization."""
         doctors = []
-        for email, doctor in self.data["doctors"].items():
+        for doctor_id, doctor in self.data["doctors"].items():
             if (specialization.lower() in doctor["specialization"].lower() or 
                 doctor["specialization"] == "General Medicine"):
                 doctors.append({
-                    'id': email,
-                    'email': email,
-                    'name': doctor["name"],
+                    'id': doctor_id,
+                    'email': doctor["email"],
+                    'name': doctor["name"], 
                     'specialization': doctor["specialization"],
                     'days_available': doctor["days_available"],
                     'created_at': doctor["created_at"]

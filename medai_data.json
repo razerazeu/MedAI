@@ -2,28 +2,41 @@
   "patients": {
     "1": {
       "id": 1,
-      "name": "Omar",
-      "email": "",
+      "name": "Ali",
+      "email": "omarhossameldin2018@outlook.com",
       "role": "Patient",
-      "medical_history": null,
+      "medical_history": "Allergic to penicillin, has asthma, had an ACL surgery in 2020",
       "current_medication": null,
-      "current_symptoms": null,
-      "created_at": "2025-07-29T16:30:59.364621"
+      "current_symptoms": "nauseous and lightheaded",
+      "created_at": "2025-07-29T23:35:53.908473"
     }
   },
   "doctors": {
     "1": {
       "id": 1,
-      "name": "Ali",
-      "email": "omarhossameldin2021@outlook.com",
+      "name": "Omar",
+      "email": "omarhossameldin2016@gmail.com",
       "role": "Doctor",
       "specialization": "General Medicine",
       "days_available": null,
-      "created_at": "2025-07-29T16:31:27.496291"
+      "created_at": "2025-07-29T23:36:14.276959"
     }
   },
-  "appointments": [],
+  "appointments": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "patient_email": "omarhossameldin2018@outlook.com",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "symptoms": "nauseous and lightheaded",
+      "appointment_date": "2025-07-31T10:00:00",
+      "status": "scheduled",
+      "google_event_id": "8tk12c4p5vv4nmvu07s3rul0r4",
+      "created_at": "2025-07-30T01:31:49.469420"
+    }
+  ],
   "next_patient_id": 2,
   "next_doctor_id": 2,
-  "next_appointment_id": 1
+  "next_appointment_id": 2
 }
