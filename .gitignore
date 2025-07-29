@@ -209,6 +209,6 @@ __marimo__/
 # --- Custom: Sensitive local files ---
 .env
 credentials.json
+token.json
 token.pickle
 gmail_token.pickle
-token.json
