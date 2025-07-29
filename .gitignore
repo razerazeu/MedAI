@@ -211,3 +211,4 @@ __marimo__/
 credentials.json
 token.pickle
 gmail_token.pickle
+token.json
