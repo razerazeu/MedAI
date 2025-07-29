@@ -13,15 +13,25 @@ class JSONDatabase:
         if os.path.exists(self.db_file):
             try:
                 with open(self.db_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Ensure all required keys exist
+                    if "next_patient_id" not in data:
+                        data["next_patient_id"] = 1
+                    if "next_doctor_id" not in data:
+                        data["next_doctor_id"] = 1
+                    if "next_appointment_id" not in data:
+                        data["next_appointment_id"] = 1
+                    return data
             except:
                 pass
         
-        # Default empty structure
+        # Default empty structure with ID counters
         return {
             "patients": {},
             "doctors": {},
             "appointments": [],
+            "next_patient_id": 1,
+            "next_doctor_id": 1,
             "next_appointment_id": 1
         }
     
@@ -31,37 +41,120 @@ class JSONDatabase:
             json.dump(self.data, f, indent=2, default=str)
     
     def add_patient(self, email: str, name: str, medical_history: str = None, 
-                   current_medication: str = None, current_symptoms: str = None) -> str:
-        """Add a new patient or update existing one."""
-        patient_data = {
-            "name": name,
-            "email": email,
-            "medical_history": medical_history,
-            "current_medication": current_medication,
-            "current_symptoms": current_symptoms,
-            "created_at": datetime.now().isoformat()
-        }
-        
-        self.data["patients"][email] = patient_data
-        self.save_data()
-        return email
+                   current_medication: str = None, current_symptoms: str = None) -> int:
+        """Add a new patient or update existing one. Returns patient ID."""
+        # Check if patient already exists by email
+        existing_patient = self.get_patient_by_email(email)
+        if existing_patient:
+            # Update existing patient
+            patient_id = existing_patient["id"]
+            patient_data = {
+                "id": patient_id,
+                "name": name,
+                "email": email,
+                "role": "Patient",
+                "medical_history": medical_history or existing_patient.get("medical_history"),
+                "current_medication": current_medication or existing_patient.get("current_medication"),
+                "current_symptoms": current_symptoms or existing_patient.get("current_symptoms"),
+                "created_at": existing_patient.get("created_at", datetime.now().isoformat())
+            }
+            self.data["patients"][str(patient_id)] = patient_data
+            self.save_data()
+            return patient_id
+        else:
+            # Create new patient
+            patient_id = self.data["next_patient_id"]
+            patient_data = {
+                "id": patient_id,
+                "name": name,
+                "email": email,
+                "role": "Patient",
+                "medical_history": medical_history,
+                "current_medication": current_medication,
+                "current_symptoms": current_symptoms,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            self.data["patients"][str(patient_id)] = patient_data
+            self.data["next_patient_id"] += 1
+            self.save_data()
+            return patient_id
+    
+    def add_doctor(self, email: str, name: str, specialization: str, days_available: str = None) -> int:
+        """Add a doctor to the system. Returns doctor ID."""
+        # Check if doctor already exists by email
+        existing_doctor = self.get_doctor_by_email(email)
+        if existing_doctor:
+            # Update existing doctor
+            doctor_id = existing_doctor["id"]
+            doctor_data = {
+                "id": doctor_id,
+                "name": name,
+                "email": email,
+                "role": "Doctor",
+                "specialization": specialization,
+                "days_available": days_available or existing_doctor.get("days_available"),
+                "created_at": existing_doctor.get("created_at", datetime.now().isoformat())
+            }
+            self.data["doctors"][str(doctor_id)] = doctor_data
+            self.save_data()
+            return doctor_id
+        else:
+            # Create new doctor
+            doctor_id = self.data["next_doctor_id"]
+            doctor_data = {
+                "id": doctor_id,
+                "name": name,
+                "email": email,
+                "role": "Doctor",
+                "specialization": specialization,
+                "days_available": days_available,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            self.data["doctors"][str(doctor_id)] = doctor_data
+            self.data["next_doctor_id"] += 1
+            self.save_data()
+            return doctor_id
     
     def get_patient_by_email(self, email: str) -> Optional[Dict]:
         """Get patient information by email."""
-        return self.data["patients"].get(email)
+        for patient in self.data["patients"].values():
+            if patient["email"] == email:
+                return patient
+        return None
+    
+    def get_patient_by_id(self, patient_id: int) -> Optional[Dict]:
+        """Get patient information by ID."""
+        return self.data["patients"].get(str(patient_id))
+
+    def get_doctor_by_email(self, email: str) -> Optional[Dict]:
+        """Get doctor information by email."""
+        for doctor in self.data["doctors"].values():
+            if doctor["email"] == email:
+                return doctor
+        return None
+    
+    def get_doctor_by_id(self, doctor_id: int) -> Optional[Dict]:
+        """Get doctor information by ID."""
+        return self.data["doctors"].get(str(doctor_id))
     
     def update_patient_symptoms(self, patient_email: str, current_symptoms: str) -> bool:
         """Update current symptoms for a patient."""
-        if patient_email in self.data["patients"]:
-            self.data["patients"][patient_email]["current_symptoms"] = current_symptoms
+        patient = self.get_patient_by_email(patient_email)
+        if patient:
+            patient["current_symptoms"] = current_symptoms
+            self.data["patients"][str(patient["id"])] = patient
             self.save_data()
             return True
         return False
     
     def clear_patient_symptoms(self, patient_email: str) -> bool:
         """Clear current symptoms for a patient (after session ends)."""
-        if patient_email in self.data["patients"]:
-            self.data["patients"][patient_email]["current_symptoms"] = None
+        patient = self.get_patient_by_email(patient_email)
+        if patient:
+            patient["current_symptoms"] = None
+            self.data["patients"][str(patient["id"])] = patient
             self.save_data()
             return True
         return False
@@ -83,20 +176,6 @@ class JSONDatabase:
             }]
         return []
     
-    def add_doctor(self, email: str, name: str, specialization: str, days_available: str = None) -> str:
-        """Add a doctor to the system."""
-        doctor_data = {
-            "name": name,
-            "email": email,
-            "specialization": specialization,
-            "days_available": days_available,
-            "created_at": datetime.now().isoformat()
-        }
-        
-        self.data["doctors"][email] = doctor_data
-        self.save_data()
-        return email
-    
     def get_doctors_by_specialization(self, specialization: str) -> List[Dict]:
         """Get doctors by specialization."""
         doctors = []
@@ -112,17 +191,27 @@ class JSONDatabase:
                     'created_at': doctor["created_at"]
                 })
         
-        # Sort by exact match first, then by name
         doctors.sort(key=lambda x: (x["specialization"] != specialization, x["name"]))
         return doctors
     
     def create_appointment(self, patient_email: str, doctor_email: str, symptoms: str, 
                           appointment_date: datetime, google_event_id: str = None) -> int:
         """Create a new appointment."""
+        # Get patient and doctor by email to get their IDs
+        patient = self.get_patient_by_email(patient_email)
+        doctor = self.get_doctor_by_email(doctor_email)
+        
+        if not patient:
+            raise ValueError(f"Patient not found: {patient_email}")
+        if not doctor:
+            raise ValueError(f"Doctor not found: {doctor_email}")
+        
         appointment_id = self.data["next_appointment_id"]
         appointment_data = {
             "id": appointment_id,
+            "patient_id": patient["id"],
             "patient_email": patient_email,
+            "doctor_id": doctor["id"],
             "doctor_email": doctor_email,
             "symptoms": symptoms,
             "appointment_date": appointment_date.isoformat(),
@@ -147,6 +236,54 @@ class JSONDatabase:
     def get_appointments(self) -> List[Dict]:
         """Get all appointments."""
         return self.data["appointments"]
+
+    def user_exists(self, email: str) -> bool:
+        """Check if a user exists in the database."""
+        return self.get_patient_by_email(email) is not None or self.get_doctor_by_email(email) is not None
+
+    def register_user(self, email: str, name: str, role: str, specialization: Optional[str] = None) -> int:
+        """Register a new user (doctor or patient). Returns user ID."""
+        if role.lower() == "doctor":
+            return self.add_doctor(email, name, specialization or "General Medicine")
+        elif role.lower() == "patient":
+            return self.add_patient(email, name)
+        else:
+            raise ValueError("Invalid role. Must be 'doctor' or 'patient'.")
+
+    def login_user(self, email: str) -> Optional[Dict]:
+        """Log in a user by retrieving their data."""
+        user = self.get_patient_by_email(email) or self.get_doctor_by_email(email)
+        return user
+    
+    def get_appointment_by_id(self, appointment_id: int) -> Optional[Dict]:
+        """Get appointment by ID."""
+        for appointment in self.data["appointments"]:
+            if appointment["id"] == appointment_id:
+                return appointment
+        return None
+    
+    def delete_appointment(self, appointment_id: int) -> bool:
+        """Delete an appointment by ID."""
+        for i, appointment in enumerate(self.data["appointments"]):
+            if appointment["id"] == appointment_id:
+                del self.data["appointments"][i]
+                self.save_data()
+                return True
+        return False
+    
+    def update_patient(self, patient_email: str, updated_data: Dict) -> bool:
+        """Update patient data."""
+        patient = self.get_patient_by_email(patient_email)
+        if patient:
+            patient_id = patient["id"]
+            # Merge updated data with existing data
+            for key, value in updated_data.items():
+                if key != "id":  # Don't allow ID changes
+                    patient[key] = value
+            self.data["patients"][str(patient_id)] = patient
+            self.save_data()
+            return True
+        return False
 
 # Create database instance
 db = JSONDatabase()
