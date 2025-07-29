@@ -211,4 +211,8 @@ __marimo__/
 credentials.json
 token.pickle
 gmail_token.pickle
+<<<<<<< HEAD
 token.json
+=======
+token.json
+>>>>>>> cb52f06912e44a07620dd35831e5ea110b768278
