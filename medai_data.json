@@ -45,6 +45,7 @@
       "current_medication": "Warfarin, Aspirin",
       "created_at": "2025-07-30T15:22:12.579818"
     },
+
     "6": {
       "id": 6,
       "name": "Eyad Ayman",
@@ -54,6 +55,7 @@
       "current_medication": "warfarin, ibuprofen",
       "created_at": "2025-07-30T16:47:25.109325"
     },
+    
     "7": {
       "id": 7,
       "name": "Eyad Nasif",
@@ -97,6 +99,15 @@
       "role": "Doctor",
       "specialization": "Internal Medicine",
       "created_at": "2025-07-30T15:20:05.352455"
+    },
+    "4": {
+      "id": 4,
+      "name": "Ahmad Karim",
+      "email": "thebeastgamer789@gmail.com",
+      "role": "Doctor",
+      "specialization": "General Medicine",
+      "days_available": null,
+      "created_at": "2025-07-30T23:04:31.321886"
     }
   },
   "appointments": [
@@ -130,20 +141,6 @@
     },
     {
       "id": 3,
-      "patient_id": 6,
-      "patient_email": "eyadayman1304@gmail.com",
-      "doctor_id": 1,
-      "doctor_email": "omarhossameldin2016@gmail.com",
-      "symptoms": "skin itching",
-      "appointment_date": "2025-07-31T10:00:00",
-      "status": "completed",
-      "appointment_completed": true,
-      "google_event_id": "hq4stq5l2kfimsr57mglu8n5b8",
-      "created_at": "2025-07-30T17:00:05.443965",
-      "completed_at": "2025-07-30T17:10:21.046560"
-    },
-    {
-      "id": 4,
       "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
       "doctor_id": 1,
@@ -158,8 +155,10 @@
     }
   ],
   "next_patient_id": 9,
-  "next_doctor_id": 4,
-  "next_appointment_id": 5,
+
+  "next_doctor_id": 5,
+  "next_appointment_id": 4,
+
   "post_visit_records": [
     {
       "id": 1,
@@ -194,44 +193,6 @@
     },
     {
       "id": 2,
-      "patient_id": 6,
-      "patient_email": "eyadayman1304@gmail.com",
-      "patient_name": "Eyad Ayman",
-      "doctor_id": 1,
-      "doctor_email": "omarhossameldin2016@gmail.com",
-      "doctor_name": "Omar",
-      "appointment_id": null,
-      "visit_date": "2025-07-30T17:14:22.014208",
-      "visit_summary": "Discussed skin itching (pruritus), likely due to dry skin or mild eczema. Diagnosis: Mild atopic dermatitis (eczema). Patient should avoid irritants, moisturize regularly, and follow medication instructions.",
-      "medications": [
-        {
-          "name": "Hydrocortisone 1% cream",
-          "dosage": "",
-          "frequency": "twice daily",
-          "duration": "for 7 days",
-          "instructions": "Apply thin layer to affected areas. Do not use on face or broken skin."
-        },
-        {
-          "name": "Cetirizine 10 mg",
-          "dosage": "10 mg",
-          "frequency": "daily",
-          "duration": "as needed",
-          "instructions": "Take one tablet daily, preferably at night. May cause drowsiness."
-        },
-        {
-          "name": "Emollient (CeraVe, Eucerin, or similar)",
-          "dosage": "",
-          "frequency": "2-3 times daily",
-          "duration": "ongoing",
-          "instructions": "Apply to whole body, especially after bathing."
-        }
-      ],
-      "instructions": "Avoid hot showers, harsh soaps, and scented products.\nUse fragrance-free laundry detergent.\nWear soft, breathable fabrics.\nWatch for redness, swelling, oozing, or worsening itch.",
-      "next_appointment": "Return in 2\u20133 weeks or sooner if no improvement. Follow-up: Routine dermatology visit. No tests needed at this time.",
-      "created_at": "2025-07-30T17:14:22.014215"
-    },
-    {
-      "id": 3,
       "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
       "patient_name": "Eyad Nasif",
@@ -262,5 +223,5 @@
       "created_at": "2025-07-30T22:39:18.842532"
     }
   ],
-  "next_visit_record_id": 4
+  "next_visit_record_id": 3
 }

@@ -257,7 +257,6 @@ def log_drug_interaction_alert(patient_email: str, patient_name: str, doctor_ema
             print("⚠️ Corrupted drug_safety_alerts.json detected. Resetting file.")
             existing_alerts = []
         
-        # Check for recent duplicates (same patient, same medications in last 24 hours)
         recent_cutoff = datetime.now().timestamp() - 86400  # 24 hours ago
         
         for existing_alert in existing_alerts:
@@ -265,8 +264,11 @@ def log_drug_interaction_alert(patient_email: str, patient_name: str, doctor_ema
                 existing_time = datetime.fromisoformat(existing_alert["timestamp"]).timestamp()
                 if (existing_time > recent_cutoff and 
                     existing_alert["patient_email"] == patient_email and
-                    set(existing_alert["medications"]) == set(medications)):
-                    print(f"⚠️ Duplicate drug interaction alert for {patient_name} within 24 hours. Skipping.")
+                    
+                    set(existing_alert["interactions"]) == set(interactions) and
+                    existing_alert["high_risk"] == high_risk):
+                    print(f"⚠️ Duplicate drug interaction alert for {patient_name} with same interactions within 24 hours. Skipping.")
+
                     return existing_alert["id"]
             except:
                 continue
@@ -311,7 +313,6 @@ def check_medication_safety(patient_email: str, medications_list: str) -> str:
         
         patient_name = patient.get("name", "Unknown Patient")
         
-        # Check for interactions
         interactions, high_risk = check_drug_interactions(medications)
         
         # Update patient's current medications in database
@@ -486,8 +487,7 @@ def get_patient_medications_with_safety_check(patient_email: str) -> str:
                 if os.path.exists(alerts_file):
                     with open(alerts_file, "r", encoding="utf-8") as f:
                         existing_alerts = json.load(f)
-                    
-                    # Check for recent alerts (within 24 hours)
+                   
                     recent_cutoff = datetime.now().timestamp() - 86400
                     recent_alert = False
                     
@@ -496,7 +496,8 @@ def get_patient_medications_with_safety_check(patient_email: str) -> str:
                             alert_time = datetime.fromisoformat(alert["timestamp"]).timestamp()
                             if (alert_time > recent_cutoff and 
                                 alert["patient_email"] == patient_email and
-                                set(alert["medications"]) == set(medications)):
+                                set(alert["interactions"]) == set(interactions) and
+                                alert["high_risk"] == high_risk):
                                 recent_alert = True
                                 break
                         except:

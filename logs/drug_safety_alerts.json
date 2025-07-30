@@ -66,5 +66,57 @@
     "high_risk": true,
     "timestamp": "2025-07-30T17:36:29.957016",
     "status": "sent"
+  },
+  {
+    "id": "865bdeb9-5336-4105-a2ab-7152d6d470b4",
+    "type": "drug_interaction",
+    "patient_email": "testtest@gmail.com",
+    "patient_name": "Test Eyad",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "ibuprofen",
+      "warfarin"
+    ],
+    "interactions": [
+      "warfarin may interact with ibuprofen (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-31T00:59:21.975981",
+    "status": "sent"
+  },
+  {
+    "id": "8fe25549-8aee-412c-9ef0-e60ca4af8475",
+    "type": "drug_interaction",
+    "patient_email": "testtest2@gmail.com",
+    "patient_name": "Test eyad 2",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "ibuprofen",
+      "warfarin"
+    ],
+    "interactions": [
+      "warfarin may interact with ibuprofen (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-31T01:17:52.970394",
+    "status": "sent"
+  },
+  {
+    "id": "889768db-a614-445c-97d7-5fef6c28bb43",
+    "type": "drug_interaction",
+    "patient_email": "eyadayman1304@gmail.com",
+    "patient_name": "Eyad Ayman",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "Digoxin",
+      "Verapamil"
+    ],
+    "interactions": [
+      "Digoxin may interact with Verapamil (based on FDA label warnings)",
+      "Verapamil may interact with Digoxin (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-31T01:58:21.457304",
+    "status": "sent"
   }
 ]
