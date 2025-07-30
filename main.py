@@ -196,9 +196,8 @@ def get_patient_medical_history(patient_email: str) -> str:
             result += "\n"
         
         # Show current symptoms from patient data
-        if patient.get('current_symptoms'):
-            result += "🩺 CURRENT SYMPTOMS:\n"
-            result += f"- {patient['current_symptoms']}\n\n"
+        # Note: Symptoms are now tied to specific appointments, not stored as patient data
+        # To see symptoms, check the appointment details for this patient
         
         if allergies:
             result += "🚨 ALLERGIES:\n"
@@ -290,7 +289,7 @@ def find_patient_by_name_or_email(identifier: str) -> str:
 
         if len(matches) == 1:
             patient = matches[0]
-            return f"Found patient: {patient['name']}\nEmail: {patient['email']}\nMedical History: {patient.get('medical_history', 'None')}\nCurrent Symptoms: {patient.get('current_symptoms', 'None')}"
+            return f"Found patient: {patient['name']}\nEmail: {patient['email']}\nMedical History: {patient.get('medical_history', 'None')}\n(Note: Symptoms are stored with specific appointments)"
 
         # Multiple matches
         result = f"Found {len(matches)} patients matching '{identifier}':\n"
@@ -566,8 +565,7 @@ def add_medical_record_after_visit(patient_email: str, record_type: str, descrip
             email=patient_email,
             name=patient['name'],
             medical_history=updated_history,
-            current_medication=patient.get('current_medication'),
-            current_symptoms=patient.get('current_symptoms')
+            current_medication=patient.get('current_medication')
         )
         
         return f"✅ Medical record added successfully for {patient['name']} ({patient_email})"
@@ -576,16 +574,14 @@ def add_medical_record_after_visit(patient_email: str, record_type: str, descrip
         return f"Error adding medical record: {str(e)}"
 
 @tool
-def update_patient_information(patient_email: str, medical_history: str = None, current_symptoms: str = None, current_medication: str = None) -> str:
-    """Update patient's medical history, current symptoms, or current medication when they share this information during conversation."""
+def update_patient_information(patient_email: str, medical_history: str = None) -> str:
+    """Update patient's medical history when they share this information during conversation. Note: Symptoms are tied to specific appointments. For medications, use report_current_medications for complete list or add_medication_to_patient for doctor prescriptions."""
     try:
         patient = db.get_patient_by_email(patient_email)
         if not patient:
             return f"Patient not found: {patient_email}"
         
-        updated_fields = []
-        
-        # Update medical history
+        # Update medical history only
         if medical_history:
             current_history = patient.get('medical_history', '') or ''
             timestamp = datetime.now().strftime('%Y-%m-%d')
@@ -596,37 +592,84 @@ def update_patient_information(patient_email: str, medical_history: str = None, 
             else:
                 updated_history = new_entry
             
-            patient['medical_history'] = updated_history
-            updated_fields.append("medical history")
-        
-        # Update current symptoms
-        if current_symptoms:
-            patient['current_symptoms'] = current_symptoms
-            updated_fields.append("current symptoms")
-        
-        # Update current medication
-        if current_medication:
-            patient['current_medication'] = current_medication
-            updated_fields.append("current medication")
-        
-        # Save to database
-        if updated_fields:
+            # Save to database
             db.add_patient(
                 email=patient_email,
                 name=patient['name'],
-                medical_history=patient.get('medical_history'),
-                current_medication=patient.get('current_medication'),
-                current_symptoms=patient.get('current_symptoms'),
-                role=patient.get('role', 'Patient')
+                medical_history=updated_history,
+                current_medication=patient.get('current_medication')
             )
             
-            fields_str = ", ".join(updated_fields)
-            return f"✅ Updated {fields_str} for {patient['name']} ({patient_email})"
+            return f"✅ Updated medical history for {patient['name']} ({patient_email})"
         else:
-            return "No information provided to update."
+            return "No medical history provided to update."
         
     except Exception as e:
         return f"Error updating patient information: {str(e)}"
+
+@tool
+def report_current_medications(patient_email: str, complete_medication_list: str) -> str:
+    """Patient reports their complete current medication list when they first register or have no medication data yet. Use when new patients tell you all their medications."""
+    try:
+        patient = db.get_patient_by_email(patient_email)
+        if not patient:
+            return f"Patient not found: {patient_email}"
+        
+        # Set the medication list for new patients or patients without existing medication data
+        db.add_patient(
+            email=patient_email,
+            name=patient['name'],
+            medical_history=patient.get('medical_history'),
+            current_medication=complete_medication_list
+        )
+        
+        return f"✅ Recorded medication list for {patient['name']} ({patient_email}).\n\nCurrent medications: {complete_medication_list}"
+        
+    except Exception as e:
+        return f"Error reporting current medications: {str(e)}"
+
+@tool
+def add_medication_to_patient(patient_email: str, medication_name: str, dosage: str = None, frequency: str = None, doctor_email: str = None) -> str:
+    """Add a specific medication to patient's current medication list. This appends to existing medications rather than overwriting."""
+    try:
+        patient = db.get_patient_by_email(patient_email)
+        if not patient:
+            return f"Patient not found: {patient_email}"
+        
+        # Format the new medication
+        med_string = medication_name
+        if dosage:
+            med_string += f" {dosage}"
+        if frequency:
+            med_string += f" ({frequency})"
+        
+        # Add timestamp and doctor info if provided
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        if doctor_email:
+            med_string += f" - Prescribed by {doctor_email} on {timestamp}"
+        
+        # Get existing medications
+        existing_medication = patient.get('current_medication', '') or ''
+        
+        if existing_medication:
+            # Append to existing medications
+            updated_medication = existing_medication + ", " + med_string
+        else:
+            # First medication for this patient
+            updated_medication = med_string
+        
+        # Update patient in database
+        db.add_patient(
+            email=patient_email,
+            name=patient['name'],
+            medical_history=patient.get('medical_history'),
+            current_medication=updated_medication
+        )
+        
+        return f"✅ Added medication '{medication_name}' to {patient['name']}'s current medication list.\n\nUpdated medications: {updated_medication}"
+        
+    except Exception as e:
+        return f"Error adding medication: {str(e)}"
 
 @tool
 def cancel_appointment(appointment_id: int) -> str:
@@ -793,10 +836,10 @@ def get_doctor_current_patient(doctor_email: str) -> str:
 📋 **PATIENT MEDICAL PROFILE**
 ═══════════════════════════════════════
 **Medical History:** {patient.get('medical_history') or 'None recorded'}
-**Current Symptoms:** {patient.get('current_symptoms') or 'None recorded'}  
 **Current Medications:** {patient.get('current_medication') or 'None recorded'}
 
-💡 **Note:** This is your current active appointment. When finished, use 'complete_appointment_and_collect_visit_data' to mark it complete and send patient summary."""
+💡 **Note:** Symptoms for this visit: {active_appointment['symptoms']}
+💡 **Next Step:** When finished, use 'complete_appointment_and_collect_visit_data' to mark it complete and send patient summary."""
     
     except Exception as e:
         return f"Error getting current patient: {str(e)}"
@@ -897,6 +940,10 @@ MedAI Healthcare System
                     print(f"DEBUG: No duration specified for medications, using default scheduling")
                     # Fall back to simple medication update without automatic scheduling
                     pass
+
+        # Update patient's current medication list with new prescriptions
+        if parsed_medications:
+            update_patient_current_medications(patient_email, parsed_medications)
 
         # Save post-visit data to database FIRST (before sending email)
         print(f"DEBUG: Saving post-visit data to database...")
@@ -1116,6 +1163,50 @@ def parse_single_medication(med_name: str, med_text: str) -> Dict:
     """Legacy function - parse a single medication from its text description."""
     # This is kept for backward compatibility but redirects to the new function
     return parse_single_medication_segment(f"{med_name} - {med_text}")
+
+def update_patient_current_medications(patient_email: str, new_medications: List[Dict]) -> bool:
+    """Update patient's current medication list by appending new medications from visit."""
+    try:
+        patient = db.get_patient_by_email(patient_email)
+        if not patient:
+            return False
+        
+        existing_medication = patient.get('current_medication', '') or ''
+        
+        # Convert new medications to string format
+        new_med_strings = []
+        for med in new_medications:
+            if med.get('name') and med['name'] != "Prescribed medication":
+                med_string = med['name']
+                if med.get('dosage'):
+                    med_string += f" {med['dosage']}"
+                if med.get('frequency'):
+                    med_string += f" ({med['frequency']})"
+                new_med_strings.append(med_string)
+        
+        if new_med_strings:
+            new_med_text = ", ".join(new_med_strings)
+            
+            if existing_medication:
+                # Append to existing medications
+                updated_medication = existing_medication + ", " + new_med_text
+            else:
+                # First medications for this patient
+                updated_medication = new_med_text
+            
+            # Update patient in database
+            db.add_patient(
+                email=patient_email,
+                name=patient['name'],
+                medical_history=patient.get('medical_history'),
+                current_medication=updated_medication
+            )
+            return True
+        
+        return False
+    except Exception as e:
+        print(f"Error updating patient medications: {e}")
+        return False
 
 @tool
 def schedule_medication_reminders_with_duration(patient_email: str, medication_list: List[Dict], doctor_email: str) -> str:
@@ -1860,6 +1951,8 @@ tools = [
     book_appointment_with_doctor,
     add_medical_record_after_visit,
     update_patient_information,
+    add_medication_to_patient,
+    report_current_medications,
     cancel_appointment,
     complete_appointment_and_collect_visit_data,
     send_post_visit_summary,
@@ -1911,10 +2004,36 @@ PATIENT SELF-IDENTIFICATION:
 AUTOMATIC INFORMATION CAPTURE:
 - ALWAYS use update_patient_information when patients mention:
   * Medical history: "I had surgery in 2020", "I'm diabetic", "I have allergies to penicillin"
-  * Current symptoms: "I have a headache", "My knee hurts", "I've been feeling dizzy"
-  * Current medications: "I take aspirin daily", "I'm on insulin", "I use an inhaler"
+- ALWAYS use report_current_medications when NEW patients mention medications:
+  * Check if patient has existing medication data first - if null/empty, use report_current_medications
+- Symptoms are captured during appointment booking and stored with specific appointments
 - Update their profile immediately without asking for confirmation
 - Acknowledge the update: "I've updated your medical profile with this information"
+
+🔥 **CRITICAL MEDICATION MANAGEMENT RULES:**
+
+**PATIENT MEDICATION PERMISSIONS:**
+- **INITIAL MEDICATION REPORTING**: New patients CAN provide their complete medication list using report_current_medications
+  * Use when patients first register and tell you all their current medications
+  * Example: "My current medications are aspirin, lisinopril, and metformin"
+  * This sets their initial medication data in the system
+
+- **INDIVIDUAL MEDICATION ADDITIONS**: Patients CANNOT add individual medications to their existing list
+  * Do NOT use add_medication_to_patient for patient requests
+  * If existing patient mentions a new medication, direct them to speak with their doctor
+  * Example: Patient says "I started taking vitamin D" → "Please discuss this with your doctor during your appointment"
+
+**DOCTOR MEDICATION PERMISSIONS:**
+- **PRESCRIPTION ADDITIONS**: Doctors CAN add individual medications using add_medication_to_patient
+  * These new prescriptions are APPENDED to the patient's existing medication list
+  * Use when doctors prescribe new medications after appointments
+  * Example: Doctor prescribes antibiotics → Use add_medication_to_patient to append to existing list
+
+**MEDICATION SCENARIOS - WHAT'S ALLOWED:**
+✅ **Scenario 1**: NEW patient reports initial medication list → Use report_current_medications (sets initial data)
+✅ **Scenario 2**: Doctor prescribes new medication → Use add_medication_to_patient (APPENDS to existing list)  
+❌ **Scenario 3**: EXISTING patient adds individual medication to his existing medication → NOT ALLOWED
+✅ **Scenario 4**: Doctor prescribes additional medication → Use add_medication_to_patient (APPENDS to existing list)
 
 COMPREHENSIVE HEALTH INFORMATION GATHERING:
 - **NEVER ask for just symptoms alone** - always collect the complete picture
@@ -1922,6 +2041,9 @@ COMPREHENSIVE HEALTH INFORMATION GATHERING:
   1. "What symptoms are you experiencing?" 
   2. "What's your medical history - any conditions, surgeries, allergies?"
   3. "What medications are you currently taking?"
+- **IMMEDIATE DATA CAPTURE**: When patients provide this information, AUTOMATICALLY save it:
+  * Medical history → Use update_patient_information 
+  * Current medications → Use report_current_medications (for new patients with no existing medication data)
 - This ensures complete patient safety and proper medical assessment
 
 🚨 **DRUG SAFETY & INTERACTION CHECKING:**
@@ -2814,7 +2936,7 @@ if st.session_state.get("show_database", False):
                         st.write(f"**Email:** {patient['email']}")
                         st.write(f"**Medical History:** {patient.get('medical_history', 'None')}")
                         st.write(f"**Current Medication:** {patient.get('current_medication', 'None')}")
-                        st.write(f"**Current Symptoms:** {patient.get('current_symptoms', 'None')}")
+                        st.write("**Note:** Symptoms are stored with specific appointments")
                         st.write(f"**Created:** {patient.get('created_at', 'Unknown')}")
             else:
                 st.info("No patients in database yet.")
