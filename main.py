@@ -18,6 +18,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
+import re
 from database import db
 import pickle
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -27,6 +28,108 @@ import pytz
 from google_calendar_auth import GoogleCalendarManager, authenticate_google_calendar, is_calendar_authenticated
 from gmail_integration import GmailManager, authenticate_gmail, is_gmail_authenticated
 from drug_safety import check_medication_safety, get_drug_interaction_history, get_patient_medications_with_safety_check
+
+def parse_natural_language_datetime(date_input: str, time_input: str, current_date: datetime = None) -> tuple:
+    """
+    Parse natural language date and time inputs into a datetime object.
+    Returns (datetime_object, success_boolean, error_message)
+    """
+    if current_date is None:
+        current_date = datetime.now()
+    
+    try:
+        # Handle date parsing
+        date_input = date_input.lower().strip()
+        time_input = time_input.lower().strip()
+        
+        # Date parsing
+        target_date = None
+        
+        if date_input in ['today']:
+            target_date = current_date.date()
+        elif date_input in ['tomorrow']:
+            target_date = (current_date + timedelta(days=1)).date()
+        elif date_input in ['day after tomorrow']:
+            target_date = (current_date + timedelta(days=2)).date()
+        elif date_input.startswith('next '):
+            # Handle "next monday", "next tuesday", etc.
+            day_name = date_input.replace('next ', '').strip()
+            days_of_week = {
+                'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+                'friday': 4, 'saturday': 5, 'sunday': 6
+            }
+            if day_name in days_of_week:
+                current_weekday = current_date.weekday()
+                target_weekday = days_of_week[day_name]
+                days_ahead = target_weekday - current_weekday
+                if days_ahead <= 0:  # Target day already happened this week
+                    days_ahead += 7
+                target_date = (current_date + timedelta(days=days_ahead)).date()
+        elif date_input.startswith('in '):
+            # Handle "in 2 days", "in 1 week", etc.
+            match = re.search(r'in (\d+) (day|days|week|weeks)', date_input)
+            if match:
+                number = int(match.group(1))
+                unit = match.group(2)
+                if unit.startswith('day'):
+                    target_date = (current_date + timedelta(days=number)).date()
+                elif unit.startswith('week'):
+                    target_date = (current_date + timedelta(weeks=number)).date()
+        else:
+            # Try to parse as standard date format (YYYY-MM-DD, MM/DD/YYYY, etc.)
+            date_formats = ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%m-%d-%Y']
+            for fmt in date_formats:
+                try:
+                    target_date = datetime.strptime(date_input, fmt).date()
+                    break
+                except ValueError:
+                    continue
+        
+        if target_date is None:
+            return None, False, f"Could not understand date: '{date_input}'. Try: 'today', 'tomorrow', 'next Monday', 'in 3 days', or YYYY-MM-DD format."
+        
+        # Time parsing
+        target_time = None
+        
+        # Handle common time formats
+        time_patterns = [
+            (r'(\d{1,2}):(\d{2})\s*(am|pm)', lambda m: parse_12_hour_time(int(m.group(1)), int(m.group(2)), m.group(3))),
+            (r'(\d{1,2})\s*(am|pm)', lambda m: parse_12_hour_time(int(m.group(1)), 0, m.group(2))),
+            (r'(\d{1,2}):(\d{2})', lambda m: (int(m.group(1)), int(m.group(2)))),  # 24-hour format
+            (r'noon', lambda m: (12, 0)),
+            (r'midnight', lambda m: (0, 0)),
+        ]
+        
+        for pattern, parser in time_patterns:
+            match = re.search(pattern, time_input)
+            if match:
+                try:
+                    hour, minute = parser(match)
+                    if 0 <= hour <= 23 and 0 <= minute <= 59:
+                        target_time = (hour, minute)
+                        break
+                except:
+                    continue
+        
+        if target_time is None:
+            return None, False, f"Could not understand time: '{time_input}'. Try: '2:30 PM', '14:30', '2 PM', 'noon', 'midnight'."
+        
+        # Combine date and time
+        hour, minute = target_time
+        appointment_datetime = datetime.combine(target_date, datetime.min.time().replace(hour=hour, minute=minute))
+        
+        return appointment_datetime, True, ""
+    
+    except Exception as e:
+        return None, False, f"Error parsing date/time: {str(e)}"
+
+def parse_12_hour_time(hour: int, minute: int, period: str) -> tuple:
+    """Convert 12-hour time to 24-hour format."""
+    if period.lower() == 'pm' and hour != 12:
+        hour += 12
+    elif period.lower() == 'am' and hour == 12:
+        hour = 0
+    return hour, minute
 
 load_dotenv()
 
@@ -218,15 +321,18 @@ def get_doctor_appointments(doctor_email: str) -> str:
         all_appointments = db.get_appointments()
         doctor_appointments = [apt for apt in all_appointments if apt['doctor_email'] == doctor_email]
         
-        if not doctor_appointments:
-            return f"No appointments found for Dr. {doctor_name} ({doctor_email})"
+        # Filter to only show SCHEDULED appointments (not completed ones)
+        scheduled_appointments = [apt for apt in doctor_appointments if apt['status'] == 'scheduled']
         
-        result = f"📅 Appointments for Dr. {doctor_name}:\n\n"
+        if not scheduled_appointments:
+            return f"No scheduled appointments found for Dr. {doctor_name} ({doctor_email})"
+        
+        result = f"📅 Scheduled Appointments for Dr. {doctor_name}:\n\n"
         
         # Sort appointments by date
-        doctor_appointments.sort(key=lambda x: x['appointment_date'])
+        scheduled_appointments.sort(key=lambda x: x['appointment_date'])
         
-        for apt in doctor_appointments:
+        for apt in scheduled_appointments:
             # Parse date for better formatting
             apt_date = datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00'))
             formatted_date = apt_date.strftime('%Y-%m-%d at %I:%M %p')
@@ -246,10 +352,30 @@ def get_doctor_appointments(doctor_email: str) -> str:
         return f"Error retrieving appointments: {str(e)}"
 
 @tool
-def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms: str, specialization: str = "General Medicine") -> str:
-    """Book an appointment for a patient with an available doctor based on symptoms and specialization needed."""
+def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms: str, preferred_date: str, preferred_time: str, specialization: str = "General Medicine") -> str:
+    """Book an appointment for a patient with an available doctor. 
+    Supports natural language date/time:
+    - Dates: 'today', 'tomorrow', 'next Monday', 'in 3 days', or YYYY-MM-DD
+    - Times: '2:30 PM', '14:30', '2 PM', 'noon', 'midnight'
+    """
     try:
         print(f"🔍 Comprehensive duplicate check for {patient_email}...")  # Debug log
+        
+        # Parse and validate patient's preferred datetime using natural language
+        appointment_datetime, parse_success, parse_error = parse_natural_language_datetime(
+            preferred_date, preferred_time, datetime.now()
+        )
+        
+        if not parse_success:
+            return f"❌ **Invalid Date/Time Format**\n\n{parse_error}\n\n**Examples of valid inputs:**\n- Date: 'today', 'tomorrow', 'next Monday', 'in 3 days', '2025-07-31'\n- Time: '2:30 PM', '14:30', '2 PM', 'noon'"
+        
+        # Validate that the appointment is in the future
+        if appointment_datetime <= datetime.now():
+            return f"❌ **Invalid Date/Time**\n\nThe selected appointment time ({appointment_datetime.strftime('%Y-%m-%d at %I:%M %p')}) is in the past.\n\nPlease choose a future date and time."
+        
+        # Validate that the appointment is within reasonable range (not more than 60 days ahead)
+        if appointment_datetime > datetime.now() + timedelta(days=60):
+            return f"❌ **Date Too Far**\n\nThe selected appointment time is more than 60 days in the future.\n\nPlease choose a date within the next 2 months."
         
         # COMPREHENSIVE DUPLICATE PREVENTION
         all_appointments = db.get_appointments()
@@ -308,11 +434,10 @@ def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms
         selected_doctor = doctors[0]
         print(f"Selected doctor: {selected_doctor['name']} ({selected_doctor['email']})")  # Debug log
         
-        # Smart scheduling: Find next available slot
-        appointment_time = datetime.now() + timedelta(days=1)  # Start with tomorrow
-        appointment_time = appointment_time.replace(hour=10, minute=0, second=0, microsecond=0)  # 10 AM
+        # Check if the doctor is available at the patient's preferred time
+        appointment_time = appointment_datetime
         
-        # Check if the selected time slot is already taken by the doctor
+        # Check for doctor conflicts at the requested time (1-hour appointment window)
         doctor_appointments_at_time = [
             apt for apt in all_appointments
             if apt['doctor_email'] == selected_doctor['email']
@@ -320,15 +445,21 @@ def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms
             and abs((datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - appointment_time).total_seconds()) < 3600  # Within 1 hour
         ]
         
-        # If slot is taken, find next available slot
-        while doctor_appointments_at_time and appointment_time < datetime.now() + timedelta(days=30):  # Look up to 30 days ahead
-            appointment_time += timedelta(hours=1)  # Try next hour
-            doctor_appointments_at_time = [
-                apt for apt in all_appointments
-                if apt['doctor_email'] == selected_doctor['email']
-                and apt['status'] == 'scheduled'
-                and abs((datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - appointment_time).total_seconds()) < 3600
-            ]
+        if doctor_appointments_at_time:
+            conflicting_apt = doctor_appointments_at_time[0]
+            conflict_time = datetime.fromisoformat(conflicting_apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', ''))
+            
+            return f"""❌ **Doctor Not Available**
+
+Dr. {selected_doctor['name']} already has an appointment at your requested time:
+
+🚫 **Your Request**: {appointment_time.strftime('%Y-%m-%d at %I:%M %p')}
+📅 **Conflicting Appointment**: {conflict_time.strftime('%Y-%m-%d at %I:%M %p')}
+
+**Please choose a different time slot:**
+- Try booking 2+ hours before or after the conflicting appointment
+**Available Specializations**: {specialization}
+"""
         
         # Create Google Calendar event
         try:
@@ -597,10 +728,15 @@ Please provide the following information to send a comprehensive summary to the 
 - Diagnosis or findings?
 - Key points the patient should remember?
 
-**2. MEDICATIONS** (If prescribed)
+**2. MEDICATIONS** (If prescribed) - **IMPORTANT: Include Duration**
 - List any prescribed medications with dosages
+- **MUST include treatment duration**: "for 7 days", "for 2 weeks", "for 1 month"
 - Include instructions for taking them
 - Mention any important warnings or side effects
+- **Examples:**
+  * "Amoxicillin 500mg twice daily for 10 days"
+  * "Ibuprofen 400mg as needed for pain for 1 week"
+  * "Metformin 500mg daily long-term"
 
 **3. POST-VISIT INSTRUCTIONS** (If applicable)
 - Recovery instructions
@@ -742,6 +878,25 @@ MedAI Healthcare System
         if medications:
             # Use intelligent medication parsing
             parsed_medications = parse_medications_intelligently(medications)
+            
+            # Auto-schedule medication reminders if medications were prescribed
+            if parsed_medications and len(parsed_medications) > 0:
+                # Check if any medication has duration specified
+                has_duration = any(med.get('duration') for med in parsed_medications)
+                
+                if has_duration:
+                    print(f"DEBUG: Scheduling medication reminders with doctor-specified durations...")
+                    try:
+                        schedule_result = schedule_medication_reminders_with_duration(
+                            patient_email, parsed_medications, doctor_email
+                        )
+                        print(f"DEBUG: Medication scheduling result: {schedule_result}")
+                    except Exception as sched_error:
+                        print(f"DEBUG: Error scheduling medication reminders: {sched_error}")
+                else:
+                    print(f"DEBUG: No duration specified for medications, using default scheduling")
+                    # Fall back to simple medication update without automatic scheduling
+                    pass
 
         # Save post-visit data to database FIRST (before sending email)
         print(f"DEBUG: Saving post-visit data to database...")
@@ -846,6 +1001,7 @@ def parse_medications_intelligently(medications_text: str) -> List[Dict]:
             "name": "Prescribed medication",
             "dosage": "",
             "frequency": "",
+            "duration": "",
             "instructions": text
         })
     
@@ -854,7 +1010,7 @@ def parse_medications_intelligently(medications_text: str) -> List[Dict]:
 
 
 def parse_single_medication_segment(segment: str) -> Dict:
-    """Parse a single medication segment to extract structured information."""
+    """Parse a single medication segment to extract structured information including duration."""
     import re
     
     # Extract medication name and dosage
@@ -867,7 +1023,7 @@ def parse_single_medication_segment(segment: str) -> Dict:
             med_name = fallback_match.group(1)
             dosage = ""
         else:
-            return {"name": "Prescribed medication", "dosage": "", "frequency": "", "instructions": segment}
+            return {"name": "Prescribed medication", "dosage": "", "frequency": "", "duration": "", "instructions": segment}
     else:
         med_name = med_match.group(1).strip()
         dosage = med_match.group(2).strip() if med_match.group(2) else ""
@@ -897,11 +1053,53 @@ def parse_single_medication_segment(segment: str) -> Dict:
             frequency = freq_match.group().strip()
             break
     
-    # Extract instructions - clean up the segment by removing medication name and dosage
+    # Extract duration - NEW FEATURE
+    duration = ""
+    duration_patterns = [
+        r'for\s+(\d+)\s*(?:day|days)',  # "for 7 days"
+        r'for\s+(\d+)\s*(?:week|weeks)',  # "for 2 weeks"
+        r'for\s+(\d+)\s*(?:month|months)',  # "for 1 month"
+        r'(?:duration|take for|continue for)[\s:]+(\d+)\s*(?:day|days)',
+        r'(?:duration|take for|continue for)[\s:]+(\d+)\s*(?:week|weeks)',
+        r'(?:duration|take for|continue for)[\s:]+(\d+)\s*(?:month|months)',
+        r'(\d+)[-\s](?:day|days)\s*(?:course|treatment|supply)',
+        r'(\d+)[-\s](?:week|weeks)\s*(?:course|treatment|supply)',
+        r'until\s+(?:symptoms\s+)?(?:resolve|improve|gone)',  # "until symptoms resolve"
+        r'as\s+needed',  # "as needed" (PRN)
+        r'long[-\s]?term',  # "long-term"
+        r'indefinitely',  # "indefinitely"
+    ]
+    
+    for pattern in duration_patterns:
+        duration_match = re.search(pattern, segment, re.IGNORECASE)
+        if duration_match:
+            if pattern.endswith('resolve|improve|gone)'):
+                duration = "until symptoms resolve"
+            elif r'as\s+needed' in pattern:
+                duration = "as needed (PRN)"
+            elif r'long[-\s]?term' in pattern:
+                duration = "long-term"
+            elif 'indefinitely' in pattern:
+                duration = "indefinitely"
+            else:
+                # Extract number and determine unit
+                number = duration_match.group(1)
+                if 'day' in pattern:
+                    duration = f"{number} days"
+                elif 'week' in pattern:
+                    duration = f"{number} weeks"
+                elif 'month' in pattern:
+                    duration = f"{number} months"
+            break
+    
+    # Extract instructions - clean up the segment by removing medication name, dosage, and duration
     instructions = segment
     instructions = re.sub(rf'\b{re.escape(med_name)}\b', '', instructions, flags=re.IGNORECASE)
     if dosage:
         instructions = re.sub(rf'\b{re.escape(dosage)}\b', '', instructions, flags=re.IGNORECASE)
+    if duration:
+        # Remove the duration text from instructions
+        instructions = re.sub(rf'for\s+{re.escape(duration)}', '', instructions, flags=re.IGNORECASE)
     
     # Clean up leading dashes, spaces, and punctuation
     instructions = re.sub(r'^[\s\-–—]+', '', instructions).strip()
@@ -910,6 +1108,7 @@ def parse_single_medication_segment(segment: str) -> Dict:
         "name": full_name,
         "dosage": dosage_only, 
         "frequency": frequency,
+        "duration": duration,
         "instructions": instructions
     }
 
@@ -919,60 +1118,149 @@ def parse_single_medication(med_name: str, med_text: str) -> Dict:
     return parse_single_medication_segment(f"{med_name} - {med_text}")
 
 @tool
-def schedule_medication_reminders(patient_email: str, medication_schedule: str, doctor_email: str, duration_days: int = 30) -> str:
-    """Schedule medication reminders and add them to patient's treatment plan. Requires patient consent before scheduling."""
+def schedule_medication_reminders_with_duration(patient_email: str, medication_list: List[Dict], doctor_email: str) -> str:
+    """Schedule medication reminders using doctor-specified durations for each medication. 
+    medication_list should contain parsed medications with duration field."""
     try:
         patient = db.get_patient_by_email(patient_email)
         if not patient:
             return f"Patient not found: {patient_email}"
         
-        # Parse medication schedule and create calendar events
-        medications = []
-        schedule_lines = medication_schedule.split('\n')
+        if not medication_list:
+            return "No medications provided to schedule"
         
-        for line in schedule_lines:
-            if line.strip():
-                medications.append(line.strip())
-        
-        if not medications:
-            return "No medications found in the schedule"
-        
-        # Create medication reminders for the specified duration
         calendar_events = []
         current_date = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)  # Start at 8 AM
         
-        for day in range(duration_days):
-            event_date = current_date + timedelta(days=day)
+        successful_schedules = []
+        failed_schedules = []
+        
+        for medication in medication_list:
+            med_name = medication.get('name', 'Unknown medication')
+            med_duration = medication.get('duration', '')
+            med_frequency = medication.get('frequency', 'daily')
+            med_dosage = medication.get('dosage', '')
+            med_instructions = medication.get('instructions', '')
             
-            # Create daily medication reminder
-            try:
-                calendar_service = get_google_calendar_service()
-                event = create_calendar_event(
-                    calendar_service,
-                    f"Medication Reminder - {patient['name']}",
-                    f"Daily Medications:\n{medication_schedule}\n\nPrescribed by: Dr. {doctor_email}",
-                    event_date,
-                    event_date + timedelta(minutes=15),
-                    patient_email
-                )
-                calendar_events.append(event.get('id'))
-            except Exception as e:
-                print(f"Error creating calendar event for day {day}: {e}")
+            # Calculate duration in days based on doctor's specification
+            duration_days = calculate_duration_in_days(med_duration)
+            
+            if duration_days <= 0:
+                failed_schedules.append(f"{med_name} - Invalid or missing duration: '{med_duration}'")
+                continue
+            
+            # Create medication reminders for the calculated duration
+            med_events = []
+            for day in range(duration_days):
+                event_date = current_date + timedelta(days=day)
+                
+                # Create daily medication reminder
+                try:
+                    calendar_service = get_google_calendar_service()
+                    event_title = f"Medication: {med_name}"
+                    event_description = f"""Patient: {patient['name']}
+Medication: {med_name}
+Dosage: {med_dosage}
+Frequency: {med_frequency}
+Duration: {med_duration}
+Instructions: {med_instructions}
+
+Prescribed by: Dr. {doctor_email}
+Day {day + 1} of {duration_days}"""
+                    
+                    event = create_calendar_event(
+                        calendar_service,
+                        event_title,
+                        event_description,
+                        event_date,
+                        event_date + timedelta(minutes=15),
+                        patient_email
+                    )
+                    med_events.append(event.get('id'))
+                except Exception as e:
+                    print(f"Error creating calendar event for {med_name} day {day}: {e}")
+            
+            if med_events:
+                calendar_events.extend(med_events)
+                successful_schedules.append(f"{med_name} - {len(med_events)} reminders over {duration_days} days")
+            else:
+                failed_schedules.append(f"{med_name} - Failed to create calendar events")
         
         # Update patient's current medication in database
+        medication_summary = "\n".join([
+            f"{med['name']} {med.get('dosage', '')} - {med.get('frequency', '')} for {med.get('duration', '')}"
+            for med in medication_list
+        ])
+        
         db.add_patient(
             email=patient_email,
             name=patient['name'],
             medical_history=patient.get('medical_history'),
-            current_medication=medication_schedule,
+            current_medication=medication_summary,
             current_symptoms=patient.get('current_symptoms'),
             role=patient.get('role', 'Patient')
         )
         
-        return f"✅ Scheduled {len(calendar_events)} medication reminders for {patient['name']} over {duration_days} days.\n\nMedication Schedule:\n{medication_schedule}\n\nReminders will appear in their calendar daily at 8:00 AM."
+        # Generate response
+        result = f"✅ **MEDICATION REMINDERS SCHEDULED**\n\n"
+        result += f"Patient: {patient['name']} ({patient_email})\n"
+        result += f"Total calendar events created: {len(calendar_events)}\n\n"
+        
+        if successful_schedules:
+            result += "📊 **SUCCESSFUL SCHEDULES:**\n"
+            for schedule in successful_schedules:
+                result += f"   ✅ {schedule}\n"
+            result += "\n"
+        
+        if failed_schedules:
+            result += "⚠️ **FAILED SCHEDULES:**\n"
+            for failure in failed_schedules:
+                result += f"   ❌ {failure}\n"
+            result += "\n"
+        
+        result += "📱 **REMINDER DETAILS:**\n"
+        result += "   • Reminders set for 8:00 AM daily\n"
+        result += "   • Duration based on doctor's prescription\n"
+        result += "   • Patient will receive calendar notifications\n"
+        result += f"   • Prescribed by: Dr. {doctor_email}\n"
+        
+        return result
         
     except Exception as e:
         return f"Error scheduling medication reminders: {str(e)}"
+
+def calculate_duration_in_days(duration_text: str) -> int:
+    """Convert duration text to number of days for scheduling."""
+    if not duration_text:
+        return 7  # Default to 1 week if no duration specified
+    
+    duration_lower = duration_text.lower().strip()
+    
+    # Handle special cases
+    if duration_lower in ["as needed", "as needed (prn)", "prn"]:
+        return 30  # 30 days for PRN medications
+    elif duration_lower in ["long-term", "indefinitely"]:
+        return 90  # 90 days for long-term medications
+    elif "until symptoms resolve" in duration_lower:
+        return 14  # 2 weeks for symptom-based duration
+    
+    # Extract numeric durations
+    import re
+    
+    # Match patterns like "7 days", "2 weeks", "1 month"
+    day_match = re.search(r'(\d+)\s*days?', duration_lower)
+    week_match = re.search(r'(\d+)\s*weeks?', duration_lower)
+    month_match = re.search(r'(\d+)\s*months?', duration_lower)
+    
+    if day_match:
+        return int(day_match.group(1))
+    elif week_match:
+        return int(week_match.group(1)) * 7
+    elif month_match:
+        return int(month_match.group(1)) * 30
+    
+    # If no pattern matches, default to 4 days
+    return 4
 
 @tool
 def send_appointment_reminder(patient_email: str, appointment_id: int, reminder_type: str = "24hour") -> str:
@@ -1575,7 +1863,7 @@ tools = [
     cancel_appointment,
     complete_appointment_and_collect_visit_data,
     send_post_visit_summary,
-    schedule_medication_reminders,
+    schedule_medication_reminders_with_duration,
     send_appointment_reminder,
     request_patient_consent,
     clean_duplicate_appointments,
@@ -1661,11 +1949,26 @@ COMPREHENSIVE HEALTH INFORMATION GATHERING:
 APPOINTMENT BOOKING:
 - Use book_appointment_with_doctor for scheduling
 - For logged-in users: automatically use their email and name from USER CONTEXT
-- **ALWAYS ASK FOR ALL THREE**: When booking appointments, ALWAYS collect:
+- **ALWAYS ASK FOR ALL FIVE REQUIRED FIELDS**: When booking appointments, ALWAYS collect:
   * Current symptoms: "What symptoms are you experiencing?"
   * Medical history: "Do you have any medical history, allergies, or past conditions I should know about?"
   * Current medications: "What medications are you currently taking (including vitamins, supplements)?"
+  * **REQUIRED: Preferred Date**: "What date would you like for your appointment?"
+  * **REQUIRED: Preferred Time**: "What time would you prefer?"
+
+**NATURAL LANGUAGE DATE/TIME SUPPORT**: The system now accepts user-friendly date/time formats:
+- **Current Date Context**: Today is {datetime.now().strftime('%A, %B %d, %Y')} - use this for reference when patients say "tomorrow", "next week", etc.
+- **Date Examples**: 'today', 'tomorrow', 'next Monday', 'in 3 days', 'July 31st', or '2025-07-31'
+- **Time Examples**: '2:30 PM', '14:30', '2 PM', 'noon', 'midnight'
+- **User-Friendly Approach**: Let patients express dates/times naturally - don't force strict formats!
+- **Examples of natural requests**:
+  * "I'd like an appointment tomorrow at 2 PM"
+  * "Can I book for next Friday at noon?"
+  * "How about in 3 days at 10:30 AM?"
 - Use update_patient_information to save all collected information before booking
+- **DOCTOR AVAILABILITY CHECKING**: The system will check if the doctor is available at the requested time
+  * If available: Appointment is confirmed and doctor is notified
+  * If conflict: Patient is informed and asked to choose a different time
 - Ask for preferred specialization only if symptoms are unclear
 - Match symptoms to appropriate medical specializations
 - STRICT DUPLICATE PREVENTION: The system has comprehensive duplicate prevention
@@ -1673,7 +1976,7 @@ APPOINTMENT BOOKING:
   * Cannot book similar symptoms within 24 hours
   * Cannot book multiple appointments within 10 minutes
   * The booking function will automatically reject duplicates with clear explanations
-- If booking fails due to duplicates, explain the policy and suggest alternatives
+- If booking fails due to duplicates or conflicts, explain the specific issue and suggest alternatives
 - Confirm appointment details and explain next steps
 
 APPOINTMENT MANAGEMENT:
@@ -1691,6 +1994,9 @@ HEALTH INFORMATION:
 DOCTOR IDENTIFICATION:
 - Use find_doctor_by_name when doctors introduce themselves
 - Retrieve their email, specialization, and schedule information
+- 🚨 CRITICAL SECURITY: NEVER modify, update, or change a doctor's specialization field
+- Doctor specializations are PERMANENT and set during registration only
+- AI tools cannot and must not alter doctor specialization data
 
 **AI ROLE IN DOCTOR WORKFLOW:**
 - AI is a separate tool that doctor uses BEFORE and AFTER patient appointments
@@ -1866,15 +2172,25 @@ CLINICAL DECISION SUPPORT:
   * Next appointment: Follow-up scheduling information
 - Format professionally with clear sections and patient-friendly language
 
-**Medication Scheduling & Reminders:**
+**Medication Scheduling & Reminders (ENHANCED WITH DOCTOR-SPECIFIED DURATION):**
 - When doctor prescribes medications and wants to "set up reminders" or "schedule medications"
-- STEP 1: Use request_patient_consent for medication scheduling
-  * Explain: "Daily medication reminders via calendar invitations"
-  * Details: Medication names, timing, duration, calendar access
-- STEP 2: After consent received, use schedule_medication_reminders
-  * Parse medication schedule (e.g., "Aspirin 81mg daily at 8 AM, Metformin 500mg twice daily at 8 AM and 8 PM")
-  * Create calendar events for specified duration (default 30 days)
-  * Set appropriate timing based on prescription
+- **NEW FEATURE**: System automatically detects and uses doctor-specified treatment duration
+- **Doctor's Medication Format Requirements**:
+  * Must include duration: "for 7 days", "for 2 weeks", "for 1 month", "long-term", "as needed"
+  * Examples: "Amoxicillin 500mg twice daily for 10 days"
+  * System parses duration and schedules accurate reminder periods
+- **Automatic Scheduling Process**:
+  * When doctor provides medications with duration in post-visit summary
+  * System automatically schedules reminders using schedule_medication_reminders_with_duration
+  * No fixed 3-day or 7-day limits - uses actual prescribed duration
+  * Long-term medications get 90-day reminder cycles
+  * PRN medications get 30-day availability windows
+- **Duration Examples**:
+  * "for 10 days" → 10 daily reminders
+  * "for 2 weeks" → 14 daily reminders  
+  * "long-term" → 90-day reminder cycle
+  * "as needed" → 30-day availability
+  * "until symptoms resolve" → 14-day reminders
 
 **Appointment Reminders:**
 - Use send_appointment_reminder proactively:
@@ -1968,8 +2284,12 @@ CLINICAL DECISION SUPPORT:
 
 **book_appointment_with_doctor**:
 - When: Patient requests appointment booking
-- For: Scheduling medical consultations
+- For: Scheduling medical consultations with patient-specified date and time
+- **REQUIRED PARAMETERS**: patient_email, patient_name, symptoms, preferred_date (YYYY-MM-DD), preferred_time (HH:MM), specialization
 - Auto-populate patient email/name for logged-in users
+- **DOCTOR AVAILABILITY**: Automatically checks if doctor is available at requested time
+  * If available: Books appointment and confirms with patient and doctor
+  * If conflict: Informs patient of conflict and suggests alternative times
 - NEVER DUPLICATE: This tool has built-in comprehensive duplicate prevention
   * Rejects if patient has ANY scheduled appointment in next 7 days
   * Rejects similar symptoms within 24 hours
@@ -2062,8 +2382,16 @@ AI: [Uses get_doctor_current_patient] → "No active appointments. All appointme
 1. Patient: "I have high blood pressure and take lisinopril daily"
 2. AI: Use update_patient_information to record medical history and current medication
 3. Patient: "I want to book an appointment"
-4. AI: Use book_appointment_with_doctor with logged-in user's info
-5. AI: Automatically send appointment confirmation and preparation instructions
+4. AI: "I'll help you book an appointment. I need to know:
+   - What symptoms are you experiencing?
+   - Any medical history or allergies?
+   - Current medications?
+   - **What date would you prefer? (YYYY-MM-DD)**
+   - **What time works for you? (HH:MM)**"
+5. Patient provides all required information
+6. AI: Use book_appointment_with_doctor with complete information
+7. **If doctor available**: Appointment confirmed, doctor notified via email
+8. **If doctor conflict**: "Dr. Smith is unavailable at that time. Please choose a different time slot."
 
 === CONVERSATION MEMORY & CONTEXT ===
 
@@ -2149,6 +2477,8 @@ AI: [IMMEDIATELY] "✅ I'll mark this appointment as complete. Please provide th
 - Escalate serious medical concerns appropriately
 - Provide accurate, up-to-date information
 - Acknowledge limitations and refer to healthcare professionals when appropriate
+- CRITICAL SECURITY: NEVER modify, update, or change doctor specialization data
+- Doctor specializations are PERMANENT and cannot be altered by AI tools
 
 === ERROR HANDLING & EDGE CASES ===
 
@@ -2351,8 +2681,27 @@ else:
     user = st.session_state.logged_in_user
     st.success(f"Logged in as {user['name']} ({user['role']})")
     if st.button("Logout"):
+        # Clear all chat and conversation data
+        st.session_state.messages = []
+        st.session_state.conversation_memory = {
+            "patient_info_mentioned": {},
+            "symptoms_discussed": [],
+            "appointments_discussed": [],
+            "topics_covered": []
+        }
+        # Clear user login data
         st.session_state.logged_in_user = None
-        st.write("Please refresh the page to log out.")
+        
+        # Clear any other session state variables that might persist
+        if "show_database" in st.session_state:
+            st.session_state.show_database = False
+        if "user_type" in st.session_state:
+            st.session_state.user_type = None
+            
+        # Force Streamlit to rerun and refresh the page
+        st.success("Logged out successfully!")
+        st.info("Page will refresh automatically...")
+        st.rerun()
 
 # Main chat interface
 user = st.session_state.get("logged_in_user", None)
