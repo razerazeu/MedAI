@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import requests
-from typing import TypedDict, Literal, Annotated
+from typing import TypedDict, Literal, Annotated, List, Dict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
@@ -553,14 +553,131 @@ MedAI
         return f"Error cancelling appointment: {str(e)}"
 
 @tool
+def complete_appointment_and_collect_visit_data(appointment_id: int, doctor_email: str) -> str:
+    """Mark an appointment as completed and prompt doctor to provide post-visit data (medications, instructions, summary). Use this when doctor indicates the appointment/consultation is finished."""
+    try:
+        # Get the appointment details
+        appointment = db.get_appointment_by_id(appointment_id)
+        if not appointment:
+            return f"❌ No appointment found with ID: {appointment_id}"
+        
+        # Verify the doctor owns this appointment
+        if appointment['doctor_email'] != doctor_email:
+            return f"❌ Access denied. This appointment belongs to a different doctor."
+        
+        # Check if already completed
+        if appointment.get('appointment_completed', False):
+            return f"⚠️ Appointment {appointment_id} is already marked as completed."
+        
+        # Mark appointment as completed
+        success = db.update_appointment_completion_status(appointment_id, completed=True)
+        if not success:
+            return f"❌ Failed to update appointment status."
+        
+        # Get patient information
+        patient = db.get_patient_by_email(appointment['patient_email'])
+        patient_name = patient['name'] if patient else appointment['patient_email']
+        
+        # Prompt doctor for post-visit information
+        return f"""✅ **Appointment #{appointment_id} marked as COMPLETED**
+
+**Patient:** {patient_name} ({appointment['patient_email']})
+**Original Symptoms:** {appointment['symptoms']}
+**Completed At:** {datetime.now().strftime('%Y-%m-%d at %I:%M %p')}
+
+═══════════════════════════════════════
+📋 **POST-VISIT DATA COLLECTION**
+═══════════════════════════════════════
+
+Please provide the following information to send a comprehensive summary to the patient:
+
+**1. VISIT SUMMARY** (Required)
+- What was discussed during the visit?
+- Diagnosis or findings?
+- Key points the patient should remember?
+
+**2. MEDICATIONS** (If prescribed)
+- List any prescribed medications with dosages
+- Include instructions for taking them
+- Mention any important warnings or side effects
+
+**3. POST-VISIT INSTRUCTIONS** (If applicable)
+- Recovery instructions
+- Lifestyle recommendations
+- What to watch for (warning signs)
+- Activity restrictions
+
+**4. FOLLOW-UP** (If needed)
+- When should patient return?
+- What type of follow-up appointment?
+- Any tests or procedures needed?
+
+💡 **Next Step:** Once you provide this information, I'll automatically send a professional email summary to the patient with all the details."""
+    
+    except Exception as e:
+        return f"Error completing appointment: {str(e)}"
+
+@tool
+def get_doctor_current_patient(doctor_email: str) -> str:
+    """Get the doctor's current active patient (scheduled appointment that hasn't been completed yet). Use this when doctor asks about 'the patient' or 'my patient'."""
+    try:
+        # Get the doctor's active appointment (not completed)
+        active_appointment = db.get_doctor_active_appointment(doctor_email)
+        
+        if not active_appointment:
+            # Check if doctor has any appointments at all
+            all_appointments = db.get_appointments()
+            doctor_appointments = [apt for apt in all_appointments if apt['doctor_email'] == doctor_email]
+            
+            if not doctor_appointments:
+                return f"❌ No appointments found for Dr. {doctor_email}."
+            else:
+                return f"⚠️ No active appointments found. All your appointments have been completed.\n\n💡 Use 'get_doctor_appointments' to see your full appointment history."
+        
+        # Get patient details
+        patient = db.get_patient_by_email(active_appointment['patient_email'])
+        if not patient:
+            return f"❌ Patient record not found for {active_appointment['patient_email']}"
+        
+        # Format appointment date
+        apt_date = datetime.fromisoformat(active_appointment['appointment_date'].replace('Z', '+00:00').replace('+00:00', ''))
+        formatted_date = apt_date.strftime('%Y-%m-%d at %I:%M %p')
+        
+        return f"""🏥 **CURRENT ACTIVE PATIENT**
+
+**Patient:** {patient['name']}
+**Email:** {patient['email']}
+**Appointment ID:** #{active_appointment['id']}
+**Scheduled:** {formatted_date}
+**Original Symptoms:** {active_appointment['symptoms']}
+**Status:** {active_appointment['status']} (Not completed)
+
+═══════════════════════════════════════
+📋 **PATIENT MEDICAL PROFILE**
+═══════════════════════════════════════
+**Medical History:** {patient.get('medical_history') or 'None recorded'}
+**Current Symptoms:** {patient.get('current_symptoms') or 'None recorded'}  
+**Current Medications:** {patient.get('current_medication') or 'None recorded'}
+
+💡 **Note:** This is your current active appointment. When finished, use 'complete_appointment_and_collect_visit_data' to mark it complete and send patient summary."""
+    
+    except Exception as e:
+        return f"Error getting current patient: {str(e)}"
+
+@tool
 def send_post_visit_summary(patient_email: str, doctor_email: str, visit_summary: str, medications: str = None, instructions: str = None, next_appointment: str = None) -> str:
     """Send a comprehensive post-visit summary email to patient with medical information, medications, and follow-up instructions."""
     try:
+        # Add debug logging
+        print(f"DEBUG: Attempting to send post-visit summary to {patient_email} from {doctor_email}")
+        
         patient = db.get_patient_by_email(patient_email)
         doctor = db.get_doctor_by_email(doctor_email)
         
-        if not patient or not doctor:
-            return f"Patient or doctor not found in database"
+        if not patient:
+            return f"❌ Patient not found with email: {patient_email}"
+        if not doctor:
+            return f"❌ Doctor not found with email: {doctor_email}"
         
         # Create comprehensive email content
         email_subject = f"Visit Summary - {datetime.now().strftime('%Y-%m-%d')}"
@@ -619,14 +736,186 @@ Dr. {doctor['name']}
 MedAI Healthcare System
         """
         
-        # Send email
-        if send_email_via_google(patient_email, email_subject, email_body):
-            return f"✅ Post-visit summary sent successfully to {patient['name']} ({patient_email})"
+        # Parse medications into structured format for database storage
+        parsed_medications = []
+        if medications:
+            # Use intelligent medication parsing
+            parsed_medications = parse_medications_intelligently(medications)
+
+        # Save post-visit data to database FIRST (before sending email)
+        print(f"DEBUG: Saving post-visit data to database...")
+        print(f"DEBUG: Parsed {len(parsed_medications)} medications: {[med['name'] for med in parsed_medications]}")
+        visit_record_id = db.add_post_visit_record(
+            patient_email=patient_email,
+            doctor_email=doctor_email,
+            visit_summary=visit_summary,
+            medications=parsed_medications,
+            instructions=instructions,
+            next_appointment=next_appointment,
+            appointment_id=None  # TODO: Link with actual appointment ID
+        )
+        
+        if visit_record_id:
+            print(f"DEBUG: Post-visit record saved with ID: {visit_record_id}")
         else:
-            return f"❌ Failed to send post-visit summary to {patient_email}"
+            print(f"DEBUG: Failed to save post-visit record")
+
+        # Send email
+        print(f"DEBUG: Attempting to send email via Gmail API...")
+        email_result = send_email_via_google(patient_email, email_subject, email_body)
+        
+        if email_result:
+            print(f"DEBUG: Email sent successfully to {patient_email}")
+            success_msg = f"✅ Post-visit summary sent successfully to {patient['name']} ({patient_email})"
+            if visit_record_id:
+                success_msg += f"\n📁 Visit record saved to database (ID: {visit_record_id})"
+            return success_msg
+        else:
+            print(f"DEBUG: Email sending failed to {patient_email}")
+            error_msg = f"❌ Failed to send post-visit summary to {patient_email}. Please check email authentication."
+            if visit_record_id:
+                error_msg += f"\n📁 However, visit record was saved to database (ID: {visit_record_id})"
+            return error_msg
             
     except Exception as e:
-        return f"Error sending post-visit summary: {str(e)}"
+        error_msg = f"Error sending post-visit summary: {str(e)}"
+        print(f"DEBUG: Exception occurred - {error_msg}")
+        return error_msg
+
+def parse_medications_intelligently(medications_text: str) -> List[Dict]:
+    """
+    Intelligently parse medication text into structured format.
+    Handles complex medication descriptions with multiple medications in one text block.
+    """
+    import re
+    
+    parsed_medications = []
+    
+    if not medications_text or not medications_text.strip():
+        return parsed_medications
+    
+    text = medications_text.strip()
+    
+    # First, try to identify clear medication boundaries
+    # Look for patterns like "MedicationName dosage - instructions. AnotherMedication dosage - instructions"
+    
+    # Split on periods followed by capital letters (likely new medications)
+    potential_segments = re.split(r'(?<=\.)\s+(?=[A-Z][a-z]+(?:\s+\d+|\s+[A-Z]))', text)
+    
+    # If we don't get multiple segments, try alternative splitting
+    if len(potential_segments) == 1:
+        # Try splitting on medication name patterns at the beginning of sentences
+        potential_segments = re.split(r'(?<=[.!])\s+(?=[A-Z][a-z]+\s+\d+)', text)
+    
+    # If still just one segment but text contains multiple obvious medication names, 
+    # try splitting based on medication name patterns
+    if len(potential_segments) == 1 and len(re.findall(r'\b[A-Z][a-z]+\s+\d+(?:\.\d+)?\s*(?:mg|%)', text)) >= 2:
+        # Find all medication name positions
+        med_positions = []
+        for match in re.finditer(r'\b([A-Z][a-z]+)\s+(\d+(?:\.\d+)?\s*(?:mg|%|mcg))', text):
+            med_positions.append((match.start(), match.group(1), match.group(2)))
+        
+        if len(med_positions) >= 2:
+            segments = []
+            for i, (pos, name, dose) in enumerate(med_positions):
+                if i < len(med_positions) - 1:
+                    end_pos = med_positions[i + 1][0]
+                    segment = text[pos:end_pos].strip()
+                else:
+                    segment = text[pos:].strip()
+                segments.append(segment)
+            potential_segments = segments
+    
+    # Process each segment
+    for segment in potential_segments:
+        segment = segment.strip()
+        if len(segment) < 5:  # Skip very short segments
+            continue
+        
+        parsed_med = parse_single_medication_segment(segment)
+        if parsed_med and parsed_med['name'] and parsed_med['name'] != "Prescribed medication":
+            # Avoid duplicates
+            if not any(existing['name'].lower().strip() == parsed_med['name'].lower().strip() 
+                      for existing in parsed_medications):
+                parsed_medications.append(parsed_med)
+    
+    # Fallback: if no medications were parsed, treat entire text as one medication
+    if not parsed_medications:
+        parsed_medications.append({
+            "name": "Prescribed medication",
+            "dosage": "",
+            "frequency": "",
+            "instructions": text
+        })
+    
+    print(f"DEBUG: Parsed medications: {parsed_medications}")
+    return parsed_medications
+
+
+def parse_single_medication_segment(segment: str) -> Dict:
+    """Parse a single medication segment to extract structured information."""
+    import re
+    
+    # Extract medication name and dosage
+    med_match = re.search(r'\b([A-Z][a-z]+(?:[a-z]*)?(?:\s+\d+(?:\.\d+)?\s*%)?(?:\s+(?:shampoo|cream|tablet|capsule))?)\s*(\d+(?:\.\d+)?\s*(?:mg|%|mcg|g|ml))?', segment)
+    
+    if not med_match:
+        # Fallback: try to find any capitalized word that looks like a medication
+        fallback_match = re.search(r'\b([A-Z][a-z]{3,})', segment)
+        if fallback_match:
+            med_name = fallback_match.group(1)
+            dosage = ""
+        else:
+            return {"name": "Prescribed medication", "dosage": "", "frequency": "", "instructions": segment}
+    else:
+        med_name = med_match.group(1).strip()
+        dosage = med_match.group(2).strip() if med_match.group(2) else ""
+    
+    # If dosage is already in the name, don't duplicate
+    if dosage and dosage in med_name:
+        full_name = med_name
+        dosage_only = dosage
+    else:
+        full_name = med_name + (' ' + dosage if dosage else '')
+        dosage_only = dosage
+    
+    # Extract frequency
+    frequency = ""
+    frequency_patterns = [
+        r'(?:take|use|apply)?\s*(?:once|twice|three times?|3x|2x|1x)?\s*(?:daily|per day|a day|weekly|per week)',
+        r'(?:once|twice|three times?|3x|2x|1x)\s*(?:/week|per week|weekly)',
+        r'every\s+\d+\s*(?:hours?|days?|weeks?)',
+        r'at\s+(?:night|bedtime|morning)',
+        r'with\s+(?:meals|food)',
+        r'\d+x/week'
+    ]
+    
+    for pattern in frequency_patterns:
+        freq_match = re.search(pattern, segment, re.IGNORECASE)
+        if freq_match:
+            frequency = freq_match.group().strip()
+            break
+    
+    # Extract instructions - clean up the segment by removing medication name and dosage
+    instructions = segment
+    instructions = re.sub(rf'\b{re.escape(med_name)}\b', '', instructions, flags=re.IGNORECASE)
+    if dosage:
+        instructions = re.sub(rf'\b{re.escape(dosage)}\b', '', instructions, flags=re.IGNORECASE)
+    
+    # Clean up leading dashes, spaces, and punctuation
+    instructions = re.sub(r'^[\s\-–—]+', '', instructions).strip()
+    
+    return {
+        "name": full_name,
+        "dosage": dosage_only, 
+        "frequency": frequency,
+        "instructions": instructions
+    }
+
+def parse_single_medication(med_name: str, med_text: str) -> Dict:
+    """Legacy function - parse a single medication from its text description."""
+    # This is kept for backward compatibility but redirects to the new function
+    return parse_single_medication_segment(f"{med_name} - {med_text}")
 
 @tool
 def schedule_medication_reminders(patient_email: str, medication_schedule: str, doctor_email: str, duration_days: int = 30) -> str:
@@ -903,6 +1192,226 @@ def clean_duplicate_appointments(patient_email: str) -> str:
     except Exception as e:
         return f"Error cleaning duplicate appointments: {str(e)}"
 
+@tool
+def get_patient_visit_history(patient_email: str) -> str:
+    """Get complete visit history for a patient including medications, instructions, and visit summaries."""
+    try:
+        visit_history = db.get_patient_visit_history(patient_email)
+        patient = db.get_patient_by_email(patient_email)
+        
+        if not patient:
+            return f"❌ Patient not found with email: {patient_email}"
+        
+        if not visit_history:
+            return f"📋 No visit history found for {patient['name']} ({patient_email})"
+        
+        result = f"📋 **VISIT HISTORY FOR {patient['name'].upper()}** ({patient_email})\n\n"
+        
+        for i, visit in enumerate(visit_history, 1):
+            visit_date = datetime.fromisoformat(visit['visit_date'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
+            result += f"**VISIT #{i} - {visit_date}**\n"
+            result += f"👨‍⚕️ Doctor: Dr. {visit['doctor_name']} ({visit['doctor_email']})\n"
+            result += f"📝 Summary: {visit['visit_summary']}\n"
+            
+            if visit.get('medications'):
+                result += f"💊 **Medications Prescribed:**\n"
+                for med in visit['medications']:
+                    if isinstance(med, dict):
+                        result += f"   • {med.get('name', 'Unknown')} - {med.get('dosage', '')} - {med.get('frequency', '')}\n"
+                        if med.get('instructions'):
+                            result += f"     Instructions: {med.get('instructions')}\n"
+                    else:
+                        result += f"   • {med}\n"
+            
+            if visit.get('instructions'):
+                result += f"📋 **Instructions:** {visit['instructions']}\n"
+            
+            if visit.get('next_appointment'):
+                result += f"📅 **Next Appointment:** {visit['next_appointment']}\n"
+            
+            result += "\n" + "="*50 + "\n\n"
+        
+        return result
+        
+    except Exception as e:
+        return f"❌ Error retrieving visit history: {str(e)}"
+
+@tool
+def get_patient_current_medications_detailed(patient_email: str) -> str:
+    """Get current medications for a patient from their most recent visit for scheduling reminders."""
+    try:
+        medications = db.get_patient_current_medications(patient_email)
+        patient = db.get_patient_by_email(patient_email)
+        
+        if not patient:
+            return f"❌ Patient not found with email: {patient_email}"
+        
+        if not medications:
+            return f"💊 No current medications found for {patient['name']} ({patient_email})"
+        
+        result = f"💊 **CURRENT MEDICATIONS FOR {patient['name'].upper()}**\n\n"
+        
+        for i, med in enumerate(medications, 1):
+            if isinstance(med, dict):
+                result += f"**{i}. {med.get('name', 'Unknown Medication')}**\n"
+                if med.get('dosage'):
+                    result += f"   📏 Dosage: {med.get('dosage')}\n"
+                if med.get('frequency'):
+                    result += f"   ⏰ Frequency: {med.get('frequency')}\n"
+                if med.get('instructions'):
+                    result += f"   📝 Instructions: {med.get('instructions')}\n"
+            else:
+                result += f"**{i}.** {med}\n"
+            result += "\n"
+        
+        result += "\n🔔 **Ready for scheduling medication reminders!**\n"
+        result += "Use the schedule_medication_reminders tool to set up automated reminders for these medications."
+        
+        return result
+        
+    except Exception as e:
+        return f"❌ Error retrieving current medications: {str(e)}"
+
+@tool
+def search_visit_records_by_condition(patient_email: str, condition_keyword: str) -> str:
+    """Search through a patient's visit history for specific conditions, symptoms, or medications."""
+    try:
+        visit_history = db.get_patient_visit_history(patient_email)
+        patient = db.get_patient_by_email(patient_email)
+        
+        if not patient:
+            return f"❌ Patient not found with email: {patient_email}"
+        
+        if not visit_history:
+            return f"📋 No visit history found for {patient['name']} ({patient_email})"
+        
+        matching_visits = []
+        keyword_lower = condition_keyword.lower()
+        
+        for visit in visit_history:
+            # Search in visit summary
+            if keyword_lower in visit.get('visit_summary', '').lower():
+                matching_visits.append(visit)
+                continue
+            
+            # Search in medications
+            if visit.get('medications'):
+                for med in visit['medications']:
+                    if isinstance(med, dict):
+                        if (keyword_lower in med.get('name', '').lower() or 
+                            keyword_lower in med.get('instructions', '').lower()):
+                            matching_visits.append(visit)
+                            break
+                    elif keyword_lower in str(med).lower():
+                        matching_visits.append(visit)
+                        break
+            
+            # Search in instructions
+            if keyword_lower in visit.get('instructions', '').lower():
+                matching_visits.append(visit)
+        
+        if not matching_visits:
+            return f"🔍 No visits found containing '{condition_keyword}' for {patient['name']}"
+        
+        result = f"🔍 **SEARCH RESULTS FOR '{condition_keyword.upper()}'**\n"
+        result += f"Patient: {patient['name']} ({patient_email})\n"
+        result += f"Found {len(matching_visits)} matching visit(s)\n\n"
+        
+        for i, visit in enumerate(matching_visits, 1):
+            visit_date = datetime.fromisoformat(visit['visit_date'].replace('Z', '+00:00')).strftime('%Y-%m-%d')
+            result += f"**MATCH #{i} - {visit_date}**\n"
+            result += f"👨‍⚕️ Doctor: Dr. {visit['doctor_name']}\n"
+            result += f"📝 Summary: {visit['visit_summary']}\n"
+            
+            if visit.get('medications'):
+                result += f"💊 Medications: "
+                med_names = []
+                for med in visit['medications']:
+                    if isinstance(med, dict):
+                        med_names.append(med.get('name', 'Unknown'))
+                    else:
+                        med_names.append(str(med))
+                result += ", ".join(med_names) + "\n"
+            
+            result += "\n"
+        
+        return result
+        
+    except Exception as e:
+        return f"❌ Error searching visit records: {str(e)}"
+
+@tool
+def schedule_medication_reminders_from_visit_data(patient_email: str, duration_days: int = 30) -> str:
+    """Schedule medication reminders using the patient's current medications from their most recent visit."""
+    try:
+        patient = db.get_patient_by_email(patient_email)
+        if not patient:
+            return f"❌ Patient not found: {patient_email}"
+        
+        # Get current medications from most recent visit
+        medications = db.get_patient_current_medications(patient_email)
+        
+        if not medications:
+            return f"💊 No current medications found for {patient['name']}. Complete a post-visit summary first to save medication data."
+        
+        # Create medication schedule string from structured data
+        medication_schedule = []
+        for med in medications:
+            if isinstance(med, dict):
+                med_line = f"{med.get('name', 'Unknown')}"
+                if med.get('dosage'):
+                    med_line += f" - {med.get('dosage')}"
+                if med.get('frequency'):
+                    med_line += f" - {med.get('frequency')}"
+                if med.get('instructions'):
+                    med_line += f" - {med.get('instructions')}"
+                medication_schedule.append(med_line)
+            else:
+                medication_schedule.append(str(med))
+        
+        medication_schedule_str = '\n'.join(medication_schedule)
+        
+        # Create medication reminders for the specified duration
+        calendar_events = []
+        current_date = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)  # Start at 8 AM
+        
+        scheduled_days = 0
+        for day in range(duration_days):
+            event_date = current_date + timedelta(days=day)
+            
+            # Create daily medication reminder
+            try:
+                calendar_service = get_google_calendar_service()
+                event = create_calendar_event(
+                    calendar_service,
+                    f"Medication Reminder - {patient['name']}",
+                    f"Daily Medications:\n{medication_schedule_str}\n\nFrom recent visit records",
+                    event_date,
+                    event_date + timedelta(minutes=15),
+                    patient_email
+                )
+                calendar_events.append(event.get('id'))
+                scheduled_days += 1
+            except Exception as e:
+                print(f"Error creating calendar event for day {day}: {e}")
+        
+        if scheduled_days > 0:
+            result = f"✅ **MEDICATION REMINDERS SCHEDULED**\n\n"
+            result += f"👤 Patient: {patient['name']} ({patient_email})\n"
+            result += f"📅 Duration: {scheduled_days} days starting tomorrow\n"
+            result += f"⏰ Daily reminder time: 8:00 AM\n\n"
+            result += f"💊 **Medications included:**\n"
+            for i, med_line in enumerate(medication_schedule, 1):
+                result += f"   {i}. {med_line}\n"
+            result += f"\n📧 Calendar invitations sent to {patient_email}"
+            result += f"\n🔔 Patient will receive daily reminders for their medication schedule"
+            return result
+        else:
+            return f"❌ Failed to schedule medication reminders. Check calendar authentication."
+        
+    except Exception as e:
+        return f"❌ Error scheduling medication reminders: {str(e)}"
+
 def update_patient_medical_record(patient_email: str, new_medication: str, doctor_email: str):
     """Update the patient's medical history and current medication."""
     try:
@@ -955,7 +1464,6 @@ def get_google_calendar_service():
             flow.fetch_token(code=code)
             creds = flow.credentials
 
-        # Save the credentials for the next run
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
 
@@ -990,18 +1498,18 @@ def create_calendar_event(service, summary, description, start_time, end_time, a
 def send_email_via_google(to_email, subject, body):
     """Send email using Gmail manager with proper authentication."""
     try:
-        print(f"Preparing to send email to {to_email}...")  # Debug log
+        print(f"DEBUG: Preparing to send email to {to_email}...")
         
         # Check if Gmail is authenticated
         if not gmail_manager.is_authenticated:
-            print("Gmail not authenticated. Attempting to authenticate...")
+            print("DEBUG: Gmail not authenticated. Attempting to authenticate...")
             if not gmail_manager.authenticate():
-                print("Gmail authentication failed.")
+                print("DEBUG: Gmail authentication failed.")
                 return False
         
         # Use the Gmail manager's service
         if not gmail_manager.service:
-            print("Gmail service not available.")
+            print("DEBUG: Gmail service not available.")
             return False
 
         # Create message
@@ -1014,16 +1522,16 @@ def send_email_via_google(to_email, subject, body):
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
         # Send email using Gmail manager's service
-        gmail_manager.service.users().messages().send(
+        result = gmail_manager.service.users().messages().send(
             userId='me', 
             body={'raw': raw_message}
         ).execute()
 
-        print(f"Email sent successfully to {to_email}")  # Debug log
+        print(f"DEBUG: Email sent successfully to {to_email}, message ID: {result.get('id', 'unknown')}")
         return True
 
     except Exception as e:
-        print(f"Error sending email to {to_email}: {e}")  # Debug log
+        print(f"DEBUG: Error sending email to {to_email}: {e}")
         return False
 
 # Define GMAIL_SCOPES for GmailManager
@@ -1058,16 +1566,22 @@ tools = [
     find_patient_by_name_or_email,
     find_doctor_by_name,
     get_doctor_appointments,
+    get_doctor_current_patient,
     check_patient_existing_appointments,
     book_appointment_with_doctor,
     add_medical_record_after_visit,
     update_patient_information,
     cancel_appointment,
+    complete_appointment_and_collect_visit_data,
     send_post_visit_summary,
     schedule_medication_reminders,
     send_appointment_reminder,
     request_patient_consent,
-    clean_duplicate_appointments
+    clean_duplicate_appointments,
+    get_patient_visit_history,
+    get_patient_current_medications_detailed,
+    search_visit_records_by_condition,
+    schedule_medication_reminders_from_visit_data
 ]
 llm_with_tools = llm.bind_tools(tools)
 
@@ -1139,27 +1653,113 @@ DOCTOR IDENTIFICATION:
 - Use find_doctor_by_name when doctors introduce themselves
 - Retrieve their email, specialization, and schedule information
 
+**AI ROLE IN DOCTOR WORKFLOW:**
+- AI is a separate tool that doctor uses BEFORE and AFTER patient appointments
+- Doctor and patient meet face-to-face in clinic (NO AI involvement during actual consultation)
+- BEFORE appointment: Doctor may use AI to lookup patient medical history
+- DURING appointment: Doctor examines patient physically (AI is NOT involved)
+- AFTER appointment: Patient leaves, then doctor uses AI to complete appointment workflow
+- AI emails comprehensive summary to patient at their home after appointment ends
+
 CRITICAL: PATIENT CONTEXT AWARENESS FOR DOCTORS:
-- When a doctor asks about "the patient" or "patient's medical history" without specifying a name/email:
-  * First check the doctor's appointments using get_doctor_appointments
-  * Look for TODAY's appointments or the most recent scheduled appointment
-  * Automatically identify the patient from the appointment context
-  * Use that patient's email to retrieve their medical history with get_patient_medical_history
-  * DO NOT ask the doctor for the patient's email or name - infer it from appointment context
-- When doctor asks: "Is there any medical history available for the patient?"
-  * Response flow: "Let me check your recent appointments to identify the patient... I found your appointment with [Patient Name]. Here is their medical history: [data]"
-- When doctor asks about "this patient" or "my patient":
-  * Automatically look up the doctor's current/recent appointments
-  * Use the appointment data to identify which patient they're referring to
-  * Retrieve that specific patient's information without asking for clarification
-- When doctor asks about "the patient" without context:
-    * Use get_doctor_appointments to find their most recent appointment
-    * If multiple appointments exist, prioritize the most recent scheduled one
-    * Use that patient's email to retrieve medical history
-- When a doctor mentions the name of the patient:
-    * Use find_patient_by_name_or_email to locate the patient record
-    * If found, retrieve their medical history with get_patient_medical_history
-    * If not found, inform the doctor: "There is no patient found with that name in the system." and ask him if he wants a list of his previous appointments to identify the patient.
+
+🔥 **NEW IMPROVED WORKFLOW - APPOINTMENT COMPLETION SYSTEM:**
+- When a doctor asks about "the patient", "my patient", or "patient's medical history":
+  * FIRST: Use get_doctor_current_patient to get their ACTIVE (non-completed) appointment
+  * This tool automatically identifies the current patient the doctor is seeing
+  * NEVER ask the doctor "which patient?" - the system finds their active appointment
+  * If no active appointment exists, all appointments have been completed
+
+ENHANCED PATIENT IDENTIFICATION LOGIC:
+- **ACTIVE APPOINTMENT PRIORITY**: The system now distinguishes between:
+  * 🟢 **Active Appointments**: Scheduled but not completed (appointment_completed = False)
+  * 🔴 **Completed Appointments**: Finished consultations (appointment_completed = True)
+- **SMART CONTEXT RESOLUTION**: When doctor says "the patient":
+  * Step 1: Check for active (non-completed) appointments using get_doctor_current_patient
+  * Step 2: If active appointment found, that's THE patient they're referring to
+  * Step 3: If no active appointments, inform doctor all appointments are completed
+- **NO MORE CONFUSION**: The "most recent" appointment is now the "most recent ACTIVE" appointment
+
+APPOINTMENT COMPLETION WORKFLOW:
+
+🚨 **AUTOMATIC COMPLETION DETECTION - CRITICAL:**
+- **ALWAYS monitor doctor's messages** for appointment completion indicators
+- **IMMEDIATELY use complete_appointment_and_collect_visit_data** when doctor says ANY of these phrases:
+  * "the appointment is done" / "appointment is finished" / "we're done"
+  * "consultation complete" / "consultation is over" / "finished with this patient"
+  * "that's all for today" / "see you next time" / "appointment ended"
+  * "we're finished here" / "consultation finished" / "visit is complete"
+  * "I'm done with this patient" / "this appointment is over"
+  * "ready to wrap up" / "let's finish this appointment"
+  * "consultation has ended" / "we can end here"
+
+🔥 **COMPLETION TRIGGER WORKFLOW:**
+1. **FACE-TO-FACE APPOINTMENT**: Doctor and patient meet physically in clinic
+2. **PATIENT LEAVES**: After consultation, patient goes home
+3. **DOCTOR USES AI**: Doctor then opens AI system and says completion phrase
+4. **INSTANT DETECTION**: AI detects completion signal from doctor
+5. **AUTO-EXECUTE**: Use complete_appointment_and_collect_visit_data with current appointment ID
+6. **FLAG UPDATE**: System automatically sets appointment_completed = True
+7. **DATA COLLECTION**: Prompt doctor to provide post-visit information for patient email:
+   * Visit summary (required)
+   * Medications prescribed (if any)
+   * Post-visit instructions (if applicable)  
+   * Follow-up requirements (if needed)
+8. **AUTO-EMAIL**: After doctor provides data, use send_post_visit_summary to email patient at home
+
+⚡ **IMPORTANT CONTEXT:**
+- Face-to-face appointment happens between doctor and patient (NO AI involved)
+- Patient leaves clinic after appointment
+- Doctor then separately uses AI system to complete appointment workflow
+- When doctor tells AI "appointment is complete", they mean the face-to-face consultation is over
+- AI's role is to process post-visit data and email summary to patient at home
+- Patient receives professional email summary after leaving the clinic
+
+🎯 **COMPLETION CONFIRMATION EXAMPLES:**
+- Doctor (to AI after patient left): "Current appointment complete"
+  → AI: "I'll mark this appointment as complete. Please provide the visit summary to email to the patient..."
+- Doctor (to AI after consultation): "The appointment is finished" 
+  → AI: "Completing appointment #X. What should I include in the patient's email summary?"
+- Doctor (to AI): "Just finished with the patient, appointment done"
+  → AI: "Appointment finished. Let me collect the post-visit information to send to the patient..."
+
+After doctor provides post-visit data:
+  * Use send_post_visit_summary to email comprehensive summary to patient
+  * Include all medications, instructions, and follow-up details
+  * Professional formatting with clear sections
+
+DOCTOR WORKFLOW EXAMPLES:
+1. **BEFORE Face-to-Face Consultation:**
+   - Doctor (to AI): "What's the patient's medical history?" 
+   - AI: Uses get_doctor_current_patient → "Your active patient is [Name]. Here's their history..."
+   - [Doctor reviews information before seeing patient]
+
+2. **DURING Face-to-Face Consultation:**
+   - [Doctor and patient meet physically in clinic - NO AI involvement]
+   - [Doctor examines patient, discusses symptoms, provides treatment]
+   - [Patient leaves clinic and goes home]
+
+3. **AFTER Face-to-Face Consultation:**
+   - Doctor (to AI): "Current appointment complete" (patient has already left)
+   - AI: Uses complete_appointment_and_collect_visit_data → Prompts for visit data to email patient
+   - Doctor (to AI): Provides summary, medications, instructions for patient email
+   - AI: Uses send_post_visit_summary → Sends professional email to patient at home
+
+4. **Next Patient Preparation:**
+   - Doctor (to AI): "Tell me about the patient" (for next appointment)
+   - AI: Uses get_doctor_current_patient → "No active appointments. All completed."
+
+LEGACY SUPPORT (if get_doctor_current_patient fails):
+- When doctor asks about "the patient" without context and get_doctor_current_patient returns no active appointments:
+  * Use get_doctor_appointments to show completed appointments
+  * Ask doctor to specify which patient by name if needed
+  * Prioritize appointments from today or most recent dates
+
+PATIENT NAME RESOLUTION:
+- When a doctor mentions a specific patient name:
+  * Use find_patient_by_name_or_email to locate patient record
+  * If found, retrieve their medical history with get_patient_medical_history
+  * If not found: "No patient found with that name. Would you like to see your appointment list?"
 
 APPOINTMENT CONTEXT INTELLIGENCE:
 - ALWAYS assume doctor questions about "the patient" refer to their most recent/current appointment
@@ -1181,9 +1781,19 @@ MEDICAL RECORD MANAGEMENT:
 - Record types: 'medication', 'condition', 'allergy', 'visit'
 - Include detailed descriptions and additional context
 
-POST-VISIT COMMUNICATION:
-- Use send_post_visit_summary to send comprehensive visit summaries to patients
+POST-VISIT COMMUNICATION & RECORD KEEPING:
+- After doctor indicates appointment is complete, AI automatically collects post-visit data
+- Use send_post_visit_summary to email comprehensive summaries to patients at home
 - Include: visit summary, prescribed medications, post-visit instructions, next appointment details
+- Professional formatting with clear sections and patient-friendly language
+- **AUTOMATIC DATABASE STORAGE**: All post-visit data is saved to database with patient-doctor relationships
+- **MEDICATION TRACKING**: Current medications automatically updated in patient records
+
+VISIT HISTORY & MEDICATION MANAGEMENT:
+- Use get_patient_visit_history to review all previous visits, medications, and instructions
+- Use get_patient_current_medications_detailed to see current medications from recent visits
+- Use search_visit_records_by_condition to find specific conditions/medications in patient history
+- Use schedule_medication_reminders_from_visit_data to automatically schedule reminders using stored medication data
 - ALWAYS use request_patient_consent before scheduling medication reminders
 - Use schedule_medication_reminders to create daily medication calendar events (requires consent)
 
@@ -1259,8 +1869,22 @@ CLINICAL DECISION SUPPORT:
 
 🔧 **ENHANCED TOOL SELECTION MATRIX:**
 
+**🆕 get_doctor_current_patient**:
+- When: Doctor asks about "the patient", "my patient", or "patient's medical history" WITHOUT specifying a name
+- For: Getting the doctor's ACTIVE (non-completed) appointment and patient details
+- Priority: Use this FIRST before get_doctor_appointments for patient identification
+- Returns: Current active patient with full medical profile and appointment details
+- Auto-identifies: The patient the doctor is currently seeing (not completed appointments)
+
+**🆕 complete_appointment_and_collect_visit_data**:
+- When: Doctor indicates appointment is finished ("we're done", "consultation complete", "appointment finished")
+- For: Marking appointment as completed and collecting post-visit data
+- Workflow: Prompts doctor for visit summary, medications, instructions, follow-up
+- Next step: Doctor provides data, then AI uses send_post_visit_summary to email patient
+- Status change: Updates appointment_completed = True in database
+
 **send_post_visit_summary**:
-- When: Doctor completes consultation and wants to send patient summary
+- When: Doctor completes consultation and wants to send patient summary (usually after complete_appointment_and_collect_visit_data)
 - For: Comprehensive post-visit communication with medications and instructions
 - Always include: visit summary, medications (if any), instructions, next steps
 
@@ -1312,20 +1936,15 @@ CLINICAL DECISION SUPPORT:
 - For: Appointment cancellation with proper notifications
 
 **get_patient_medical_history**:
-- When: Doctor asks about patient's medical background, history, medications, or conditions
-- CRITICAL: If doctor asks about "the patient" without specifying name/email:
-  * First use get_doctor_appointments to find the doctor's recent appointments
-  * Identify the most relevant patient (today's appointment or most recent scheduled)
-  * Use that patient's email to retrieve their medical history
-  * DO NOT ask doctor for patient email - infer it from appointment context
+- When: Doctor asks about specific patient's medical background (when patient is already identified)
 - For: Retrieving comprehensive patient medical background for clinical review
-- Auto-identify patient from appointment context when doctor references "the patient"
+- Note: Use get_doctor_current_patient FIRST if doctor says "the patient" without specifics
 
 **get_doctor_appointments**:
-- When: Doctor wants to review their schedule OR when doctor asks about "the patient" without specifics
-- For: Displaying upcoming patient appointments AND identifying patient context
-- Use for context: When doctor says "the patient" - check appointments to identify which patient
-- Priority: Today's appointments first, then upcoming scheduled appointments
+- When: Doctor wants to review their full schedule history (both active and completed)
+- For: Displaying all patient appointments with status information
+- Use for: Schedule review, appointment history, completed appointment tracking
+- Shows: All appointments with completion status and dates
 
 **add_medical_record_after_visit**:
 - When: Doctor needs to document post-visit information
@@ -1337,29 +1956,61 @@ CLINICAL DECISION SUPPORT:
 
 === WORKFLOW EXAMPLES ===
 
-🏥 **Doctor Post-Visit Workflow:**
+🏥 **🆕 ENHANCED DOCTOR CONSULTATION WORKFLOW:**
+
+**1. PATIENT IDENTIFICATION (During Consultation):**
+- Doctor: "What's the patient's medical history?" OR "Tell me about the patient"
+- AI: Use get_doctor_current_patient → Automatically finds active appointment
+- AI: Response: "Your current active patient is [Name] ([email]). Here's their medical history: [data]"
+- **No confusion**: System knows exactly which patient doctor is seeing
+
+**2. APPOINTMENT COMPLETION WORKFLOW:**
+- Doctor: "The appointment is done" OR "We're finished" OR "Consultation complete"
+- AI: Use complete_appointment_and_collect_visit_data with appointment ID
+- AI: Marks appointment as completed and prompts: "Please provide post-visit data..."
+- Doctor: Provides visit summary, medications, instructions, follow-up plans
+- AI: Use send_post_visit_summary → Sends professional email to patient
+- **Result**: Appointment marked complete, patient receives comprehensive summary
+
+**3. POST-COMPLETION STATE:**
+- Doctor: "Tell me about the patient" (after marking previous appointment complete)
+- AI: Use get_doctor_current_patient → "No active appointments. All completed."
+- Doctor: Can then see new patients or review appointment history
+
+**4. MULTIPLE APPOINTMENTS SCENARIO:**
+- Day 1: Doctor sees Patient A → Completes appointment → Patient A marked complete
+- Day 2: Doctor sees Patient B → get_doctor_current_patient finds Patient B (active)
+- **No confusion**: System always knows current vs completed appointments
+
+**LEGACY: Doctor Post-Visit Workflow (Alternative):**
 1. Doctor: "Send Jane a summary of today's visit with her new medication schedule"
 2. AI: Use send_post_visit_summary with visit details and medications
 3. Doctor: "Set up daily reminders for her medications"
 4. AI: Use request_patient_consent for medication scheduling
 5. After consent: Use schedule_medication_reminders with intelligent timing
 
-**CRITICAL: Doctor Patient Context Workflow:**
-1. Doctor: "Is there any medical history available for the patient?"
-2. AI: First use get_doctor_appointments to check doctor's recent appointments
-3. AI: Identify the most relevant patient (today's appointment or recent scheduled)
-4. AI: Use get_patient_medical_history with that patient's email
-5. AI: Response: "I found your appointment with [Patient Name] ([email]). Here is their medical history: [data]"
-- NEVER ask doctor for patient email/name when they say "the patient"
-- ALWAYS infer patient context from appointment data
-- ALWAYS provide patient identification in response for clarity
+**🔄 COMPLETE DOCTOR WORKFLOW EXAMPLE:**
+```
+STEP 1 - BEFORE APPOINTMENT:
+Doctor (to AI): "What's the patient's medical history?"
+AI: [Uses get_doctor_current_patient] → "Your active patient is John Smith (john@email.com). Here's his history: [detailed medical info]"
 
-**Doctor Schedule Review Workflow:**
-1. Doctor: "What appointments do I have today?"
-2. AI: Use get_doctor_appointments with doctor's email
-3. AI: Present organized schedule with patient details, symptoms, times
-4. Doctor: "Tell me about the patient's background" (referring to appointment list)
-5. AI: Use patient email from the appointment to get medical history (no need to ask which patient)
+STEP 2 - FACE-TO-FACE APPOINTMENT:
+[Doctor and John meet physically in clinic]
+[Doctor examines John, discusses symptoms, prescribes medication]
+[John leaves clinic and goes home]
+
+STEP 3 - AFTER APPOINTMENT (Doctor uses AI):
+Doctor (to AI): "Current appointment complete." (John has already left)
+AI: [Uses complete_appointment_and_collect_visit_data] → "Appointment marked complete. Please provide information to email to the patient: 1) Visit summary 2) Medications 3) Instructions 4) Follow-up"
+
+Doctor (to AI): "Patient had chest pain, diagnosed with acid reflux. Prescribed omeprazole 20mg daily. Advised to avoid spicy foods and follow up in 2 weeks."
+AI: [Uses send_post_visit_summary] → "✅ Comprehensive visit summary sent to John Smith's email with diagnosis, medication, and follow-up instructions."
+
+STEP 4 - NEXT PATIENT:
+Doctor (to AI): "Tell me about the patient." (for next appointment)
+AI: [Uses get_doctor_current_patient] → "No active appointments. All appointments completed. Would you like to see your appointment history?"
+```
 
 👥 **Patient Interaction Workflow:**
 1. Patient: "I have high blood pressure and take lisinopril daily"
@@ -1414,6 +2065,37 @@ PERSONALIZED RESPONSES:
 - Always confirm patient identity in responses: "I found your appointment with [Patient Name]. Here is their information..."
 - Provide comprehensive patient data when requested without requiring additional identification
 
+🚨 **CRITICAL: AUTOMATIC APPOINTMENT COMPLETION DETECTION FOR DOCTORS:**
+
+**ALWAYS BE MONITORING** every doctor message for completion signals. The moment you detect ANY completion phrase, IMMEDIATELY trigger the completion workflow:
+
+**COMPLETION TRIGGER PHRASES (Monitor for these):**
+- **Direct completion**: "appointment is complete", "current appointment complete", "appointment finished"
+- **Status updates**: "appointment done", "consultation finished", "visit completed"
+- **Workflow phrases**: "ready to close this appointment", "finished with this patient", "appointment ended"
+- **Transition phrases**: "moving to next patient", "this appointment is over", "consultation complete"
+- **Summary phrases**: "appointment concluded", "visit is done", "finished the consultation"
+
+**AUTOMATIC RESPONSE PATTERN:**
+EXAMPLE:
+```
+Doctor (to AI): "Current appointment complete" (after face-to-face consultation ended and patient left)
+AI: [IMMEDIATELY] "✅ I'll mark this appointment as complete. Please provide the post-visit information to email to the patient..."
+[Uses complete_appointment_and_collect_visit_data automatically]
+```
+
+**DO NOT:**
+- Wait for explicit instruction to mark complete
+- Ask "Should I complete the appointment?"
+- Ignore subtle completion signals
+- Let appointments remain active after natural ending
+
+**DO:**
+- Detect completion signals instantly
+- Automatically trigger completion workflow
+- Be proactive in recognizing appointment endings
+- Set appointment_completed = True immediately
+
 **Universal Guidelines:**
 - Maintain patient confidentiality and privacy
 - Follow HIPAA-appropriate communication practices
@@ -1464,36 +2146,15 @@ def doctor_interaction_node(state: GraphState):
     
     return state
 
-# Node for handling email and scheduling workflows
-def communication_workflow_node(state: GraphState):
-    """Specialized node for handling complex email and scheduling workflows"""
-    messages = state["messages"]
-    last_message = messages[-1]
-    
-    # Check if the last interaction involved email or scheduling tools
-    if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-        for tool_call in last_message.tool_calls:
-            tool_name = tool_call.get('name', '')
-            if tool_name in ['send_post_visit_summary', 'schedule_medication_reminders', 'request_patient_consent']:
-                # Add workflow-specific processing here
-                pass
-    
-    return state
 
-
-def should_continue(state: GraphState) -> Literal["tools", "patient_interaction", "doctor_interaction", "communication_workflow", "__end__"]:
+def should_continue(state: GraphState) -> Literal["tools", "patient_interaction", "doctor_interaction", "__end__"]:
     messages = state["messages"]
     last_message = messages[-1]
     user_context = state.get("user_context", {})
     
     if last_message.tool_calls:  # Check if the last message has any tool calls
-        # Check if this involves communication/scheduling tools
-        for tool_call in last_message.tool_calls:
-            tool_name = tool_call.get('name', '')
-            if tool_name in ['send_post_visit_summary', 'schedule_medication_reminders', 'request_patient_consent', 'send_appointment_reminder']:
-                return "communication_workflow"
-        
-        return "tools"  # Regular tool execution
+        # For now, send all tool calls to the regular tools node to avoid routing issues
+        return "tools"  # Regular tool execution for all tools
     
     # Route based on user role for specialized handling
     if user_context.get("role") == "Patient":
@@ -1513,7 +2174,6 @@ builder.add_node("tool_calling_llm", tool_calling_llm)
 builder.add_node("tools", tool_node)
 builder.add_node("patient_interaction", patient_interaction_node)
 builder.add_node("doctor_interaction", doctor_interaction_node)
-builder.add_node("communication_workflow", communication_workflow_node)
 
 # Define edges for smoother flow
 builder.add_edge(START, "tool_calling_llm")
@@ -1528,7 +2188,6 @@ builder.add_conditional_edges(
 builder.add_edge("tools", "tool_calling_llm")
 builder.add_edge("patient_interaction", END)
 builder.add_edge("doctor_interaction", END)
-builder.add_edge("communication_workflow", "tool_calling_llm")
 
 graph = builder.compile()
 
@@ -1537,12 +2196,12 @@ with open("graph.png", "wb") as f:
     f.write(graph.get_graph().draw_mermaid_png())
 
 st.set_page_config(
-    page_title="Medical Assistant AI",
+    page_title="Clinisync",
     page_icon="medical.png",
     layout="wide"
 )
 
-st.title("Medical Assistant AI")
+st.title("Clinisync")
 st.markdown("Your AI-powered health companion for Patients & Doctors")
 
 # Initialize session state for conversation memory
@@ -1806,5 +2465,5 @@ if st.session_state.get("show_database", False):
 
 # Footer
 st.markdown("---")
-st.markdown("**MedAI** - Powered by LangChain, OpenAI, and Google APIs | Built for healthcare professionals and patients")
+st.markdown("**Clinisync** - Powered by LangChain, OpenAI, and Google APIs | Built for healthcare professionals and patients")
 

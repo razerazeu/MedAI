@@ -5,10 +5,20 @@
       "name": "Ali",
       "email": "omarhossameldin2018@outlook.com",
       "role": "Patient",
-      "medical_history": "Allergic to penicillin, has asthma, had an ACL surgery in 2020",
+      "medical_history": "Allergic to penicillin, has asthma, had an ACL surgery in 2020\nVISIT: Patient reported feeling nauseous and lightheaded over the past 24 hours. No vomiting, fever, or recent trauma. Likely cause is dehydration or a viral illness. Blood pressure was slightly low. No signs of acute distress or neurological abnormalities. Key points: 1. Stay hydrated, sip fluids throughout the day. 2. Rest and avoid sudden movements to prevent dizziness. 3. Monitor symptoms; seek care if they worsen. 4. Remind all medical professionals of penicillin allergy. (Medication: Meclizine 25 mg (for nausea and dizziness). Take 1 tablet by mouth every 8 hours as needed. May cause drowsiness; avoid driving or operating heavy machinery. Do not take with alcohol.) - Added by omarhossameldin2016@gmail.com on 2025-07-30",
       "current_medication": null,
       "current_symptoms": "nauseous and lightheaded",
       "created_at": "2025-07-29T23:35:53.908473"
+    },
+    "2": {
+      "id": 2,
+      "name": "Peter",
+      "email": "omar.aboauf@student.giu-uni.de",
+      "role": "Patient",
+      "medical_history": "No known allergies",
+      "current_medication": "Ketoconazole 2% shampoo -  - 3x/week; Hydroxyzine 25 mg - 25 mg - at night",
+      "current_symptoms": "itchy skin and hair",
+      "created_at": "2025-07-30T10:19:07.198623"
     }
   },
   "doctors": {
@@ -17,9 +27,18 @@
       "name": "Omar",
       "email": "omarhossameldin2016@gmail.com",
       "role": "Doctor",
-      "specialization": "General Medicine",
+      "specialization": "Dermatology",
       "days_available": null,
       "created_at": "2025-07-29T23:36:14.276959"
+    },
+    "2": {
+      "id": 2,
+      "name": "Hassan",
+      "email": "omarhossameldin2021@gmail.com",
+      "role": "Doctor",
+      "specialization": "Dermatologist",
+      "days_available": null,
+      "created_at": "2025-07-30T10:20:50.510016"
     }
   },
   "appointments": [
@@ -31,12 +50,54 @@
       "doctor_email": "omarhossameldin2016@gmail.com",
       "symptoms": "nauseous and lightheaded",
       "appointment_date": "2025-07-31T10:00:00",
-      "status": "scheduled",
+      "status": "completed",
       "google_event_id": "8tk12c4p5vv4nmvu07s3rul0r4",
-      "created_at": "2025-07-30T01:31:49.469420"
+      "created_at": "2025-07-30T01:31:49.469420",
+      "appointment_completed": true,
+      "completed_at": "2025-07-30T09:58:30.139229"
+    },
+    {
+      "id": 2,
+      "patient_id": 2,
+      "patient_email": "omar.aboauf@student.giu-uni.de",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "symptoms": "Itchy skin and hair, tried creams but it gets itchier everywhere",
+      "appointment_date": "2025-07-31T10:00:00",
+      "status": "completed",
+      "appointment_completed": true,
+      "google_event_id": "h9idqbf48807dkqikg1l02fhhc",
+      "created_at": "2025-07-30T10:23:31.035451",
+      "completed_at": "2025-07-30T10:31:29.299607"
     }
   ],
-  "next_patient_id": 2,
-  "next_doctor_id": 2,
-  "next_appointment_id": 2
+  "next_patient_id": 3,
+  "next_doctor_id": 3,
+  "next_appointment_id": 3,
+  "post_visit_records": [
+    {
+      "id": 1,
+      "patient_id": 2,
+      "patient_email": "omar.aboauf@student.giu-uni.de",
+      "patient_name": "Peter",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "doctor_name": "Omar",
+      "appointment_id": null,
+      "visit_date": "2025-07-30T10:38:46.450533",
+      "visit_summary": "Persistent itching on skin and scalp. Tried OTC creams with no relief. No new soaps/detergents. Diagnosis: Likely chronic dermatitis or possible fungal infection. Key points: 1. Stop all current creams. 2. Avoid scratching to prevent infection. 3. Keep skin dry and clean.",
+      "medications": [
+        {
+          "name": "Ketoconazole 2% shampoo",
+          "dosage": "Use on scalp and affected skin areas 3x/week. Leave on for 5 mins before rinsing. May cause dryness\u2014use mild moisturizer after. Hydroxyzine 25 mg",
+          "frequency": "Take 1 tablet at night for itching. May cause drowsiness. Avoid alcohol.",
+          "instructions": ""
+        }
+      ],
+      "instructions": "Don\u2019t use scented soaps or lotions. Wear loose, breathable clothing. Watch for redness, swelling, or oozing\u2014may indicate infection. Return in 2 weeks if no improvement. Sooner if rash worsens. Consider skin scraping or allergy testing if unresolved.",
+      "next_appointment": "Return in 2 weeks if no improvement.",
+      "created_at": "2025-07-30T10:38:46.450540"
+    }
+  ],
+  "next_visit_record_id": 2
 }
