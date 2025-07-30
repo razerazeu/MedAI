@@ -93,7 +93,7 @@ class JSONDatabase:
             self.save_data()
             return patient_id
     
-    def add_doctor(self, email: str, name: str, specialization: str, days_available: str = None) -> int:
+    def add_doctor(self, email: str, name: str, specialization: str) -> int:
         """Add a doctor to the system. Returns doctor ID."""
         # Check if doctor already exists by email
         existing_doctor = self.get_doctor_by_email(email)
@@ -106,7 +106,6 @@ class JSONDatabase:
                 "email": email,
                 "role": "Doctor",
                 "specialization": specialization,
-                "days_available": days_available or existing_doctor.get("days_available"),
                 "created_at": existing_doctor.get("created_at", datetime.now().isoformat())
             }
             self.data["doctors"][str(doctor_id)] = doctor_data
@@ -121,7 +120,6 @@ class JSONDatabase:
                 "email": email,
                 "role": "Doctor",
                 "specialization": specialization,
-                "days_available": days_available,
                 "created_at": datetime.now().isoformat()
             }
             
@@ -190,21 +188,71 @@ class JSONDatabase:
         return []
     
     def get_doctors_by_specialization(self, specialization: str) -> List[Dict]:
-        """Get doctors by specialization."""
+        """Get doctors by specialization with improved matching for common variations."""
         doctors = []
+        search_term = specialization.lower().strip()
+        
+        # Create mapping for common specialization variations
+        specialization_mappings = {
+            'dermatology': 'dermatologist',
+            'cardiology': 'cardiologist', 
+            'neurology': 'neurologist',
+            'oncology': 'oncologist',
+            'psychiatry': 'psychiatrist',
+            'psychology': 'psychologist',
+            'gynecology': 'gynecologist',
+            'urology': 'urologist',
+            'radiology': 'radiologist',
+            'anesthesiology': 'anesthesiologist',
+            'pathology': 'pathologist',
+            'endocrinology': 'endocrinologist',
+            'gastroenterology': 'gastroenterologist',
+            'ophthalmology': 'ophthalmologist',
+            'otolaryngology': 'otolaryngologist',
+            'orthopedics': 'orthopedic surgeon',
+            'dermal': 'dermatologist',
+            'derm': 'dermatologist',
+            'internal': 'internal medicine',
+            'general': 'general medicine'
+        }
+        
+        # Check for direct mapping first
+        if search_term in specialization_mappings:
+            mapped_term = specialization_mappings[search_term]
+            search_term = mapped_term
+        
         for doctor_id, doctor in self.data["doctors"].items():
-            if (specialization.lower() in doctor["specialization"].lower() or 
+            doctor_spec_lower = doctor["specialization"].lower()
+            
+            # Check multiple matching conditions:
+            # 1. Exact match (case insensitive)
+            # 2. Search term is contained in doctor's specialization
+            # 3. Doctor's specialization is contained in search term
+            # 4. Always include General Medicine doctors as backup
+            if (search_term == doctor_spec_lower or 
+                search_term in doctor_spec_lower or 
+                doctor_spec_lower in search_term or
                 doctor["specialization"] == "General Medicine"):
+                
                 doctors.append({
                     'id': doctor_id,
                     'email': doctor["email"],
                     'name': doctor["name"], 
                     'specialization': doctor["specialization"],
-                    'days_available': doctor["days_available"],
                     'created_at': doctor["created_at"]
                 })
         
-        doctors.sort(key=lambda x: (x["specialization"] != specialization, x["name"]))
+        # Sort doctors: exact matches first, then partial matches, then general medicine
+        def sort_key(doctor):
+            doc_spec_lower = doctor["specialization"].lower()
+            if doc_spec_lower == search_term:
+                return (0, doctor["name"])  # Exact match
+            elif search_term in doc_spec_lower or doc_spec_lower in search_term:
+                return (1, doctor["name"])  # Partial match
+            else:
+                return (2, doctor["name"])  # General medicine backup
+        
+        doctors.sort(key=sort_key)
         return doctors
     
     def create_appointment(self, patient_email: str, doctor_email: str, symptoms: str, 
