@@ -60,14 +60,15 @@
       "current_symptoms": "skin itching",
       "created_at": "2025-07-30T16:47:25.109325"
     },
-    "9": {
-      "id": 9,
-      "name": "Eyad Ayman",
+    "7": {
+      "id": 7,
+      "name": "Eyad Nasif",
       "email": "eyadnasif1304@gmail.com",
       "role": "Patient",
-      "medical_history": "[2025-07-30] Nut allergy\n[2025-07-30] Nut allergy\nMEDICATION: Hydrocortisone 1% cream \u2013 Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin. - Added by thebeastgamer789@gmail.com on 2025-07-30\nMEDICATION: Ibuprofen - Added by thebeastgamer789@gmail.com on 2025-07-30",
-      "current_medication": "Clarinase, Hydrocortisone 1% cream (twice daily); Hydrocortisone 1% cream -  - twice daily",
-      "created_at": "2025-07-30T23:11:23.891367"
+      "medical_history": "[2025-07-30] ankle surgery",
+      "current_medication": "Paracetamol 500 mg - 500 mg - per day; Cetirizine 10 mg - 10 mg - daily",
+      "current_symptoms": "runny nose and sore throat",
+      "created_at": "2025-07-30T18:42:02.624276"
     }
   },
   "doctors": {
@@ -76,7 +77,7 @@
       "name": "Omar",
       "email": "omarhossameldin2016@gmail.com",
       "role": "Doctor",
-      "specialization": "Dermatology",
+      "specialization": "Internal Medicine",
       "days_available": null,
       "created_at": "2025-07-29T23:36:14.276959"
     },
@@ -97,18 +98,23 @@
       "specialization": "Internal Medicine",
       "days_available": null,
       "created_at": "2025-07-30T15:20:05.352455"
-    },
-    "4": {
-      "id": 4,
-      "name": "Ahmad Karim",
-      "email": "thebeastgamer789@gmail.com",
-      "role": "Doctor",
-      "specialization": "General Medicine",
-      "days_available": null,
-      "created_at": "2025-07-30T23:04:31.321886"
     }
   },
   "appointments": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "patient_email": "omarhossameldin2018@outlook.com",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "symptoms": "nauseous and lightheaded",
+      "appointment_date": "2025-07-31T10:00:00",
+      "status": "completed",
+      "google_event_id": "8tk12c4p5vv4nmvu07s3rul0r4",
+      "created_at": "2025-07-30T01:31:49.469420",
+      "appointment_completed": true,
+      "completed_at": "2025-07-30T09:58:30.139229"
+    },
     {
       "id": 2,
       "patient_id": 2,
@@ -138,23 +144,23 @@
       "completed_at": "2025-07-30T17:10:21.046560"
     },
     {
-      "id": 6,
-      "patient_id": 9,
+      "id": 4,
+      "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
-      "doctor_id": 4,
-      "doctor_email": "thebeastgamer789@gmail.com",
-      "symptoms": "sore throat, headache, fever",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "symptoms": "runny nose and sore throat",
       "appointment_date": "2025-07-31T10:00:00",
       "status": "completed",
       "appointment_completed": true,
-      "google_event_id": "to7kogutps5ro7luc9kde9grlc",
-      "created_at": "2025-07-30T23:33:26.565509",
-      "completed_at": "2025-07-30T23:38:11.490845"
+      "google_event_id": "a3vklhg0lev96782pkupu2e0ds",
+      "created_at": "2025-07-30T18:47:27.897012",
+      "completed_at": "2025-07-30T22:34:45.667605"
     }
   ],
-  "next_patient_id": 10,
-  "next_doctor_id": 5,
-  "next_appointment_id": 7,
+  "next_patient_id": 8,
+  "next_doctor_id": 4,
+  "next_appointment_id": 5,
   "post_visit_records": [
     {
       "id": 1,
@@ -170,9 +176,17 @@
       "medications": [
         {
           "name": "Ketoconazole 2% shampoo",
-          "dosage": "Use on scalp and affected skin areas 3x/week. Leave on for 5 mins before rinsing. May cause dryness\u2014use mild moisturizer after. Hydroxyzine 25 mg",
-          "frequency": "Take 1 tablet at night for itching. May cause drowsiness. Avoid alcohol.",
-          "instructions": ""
+          "dosage": "",
+          "frequency": "3x/week",
+          "duration": "for 2 weeks",
+          "instructions": "Use on scalp and affected skin areas. Leave on for 5 mins before rinsing. May cause dryness—use mild moisturizer after."
+        },
+        {
+          "name": "Hydroxyzine 25 mg",
+          "dosage": "25 mg",
+          "frequency": "at night",
+          "duration": "as needed",
+          "instructions": "Take 1 tablet at night for itching. May cause drowsiness. Avoid alcohol."
         }
       ],
       "instructions": "Don\u2019t use scented soaps or lotions. Wear loose, breathable clothing. Watch for redness, swelling, or oozing\u2014may indicate infection. Return in 2 weeks if no improvement. Sooner if rash worsens. Consider skin scraping or allergy testing if unresolved.",
@@ -195,13 +209,22 @@
           "name": "Hydrocortisone 1% cream",
           "dosage": "",
           "frequency": "twice daily",
-          "instructions": "Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin."
+          "duration": "for 7 days",
+          "instructions": "Apply thin layer to affected areas. Do not use on face or broken skin."
         },
         {
           "name": "Cetirizine 10 mg",
           "dosage": "10 mg",
           "frequency": "daily",
-          "instructions": "Take one tablet daily, preferably at night. May cause drowsiness.\nEmollient (CeraVe, Eucerin, or similar) \u2013 Apply to whole body 2\u20133 times daily, especially after bathing."
+          "duration": "as needed",
+          "instructions": "Take one tablet daily, preferably at night. May cause drowsiness."
+        },
+        {
+          "name": "Emollient (CeraVe, Eucerin, or similar)",
+          "dosage": "",
+          "frequency": "2-3 times daily",
+          "duration": "ongoing",
+          "instructions": "Apply to whole body, especially after bathing."
         }
       ],
       "instructions": "Avoid hot showers, harsh soaps, and scented products.\nUse fragrance-free laundry detergent.\nWear soft, breathable fabrics.\nWatch for redness, swelling, oozing, or worsening itch.",
@@ -210,26 +233,34 @@
     },
     {
       "id": 3,
-      "patient_id": 9,
+      "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
-      "patient_name": "Eyad Ayman",
-      "doctor_id": 4,
-      "doctor_email": "thebeastgamer789@gmail.com",
-      "doctor_name": "Ahmad Karim",
+      "patient_name": "Eyad Nasif",
+      "doctor_id": 1,
+      "doctor_email": "omarhossameldin2016@gmail.com",
+      "doctor_name": "Omar",
       "appointment_id": null,
-      "visit_date": "2025-07-30T23:39:41.403843",
-      "visit_summary": "Discussed skin itching (pruritus), likely due to dry skin or mild eczema. Diagnosis: Mild atopic dermatitis (eczema). Patient should avoid irritants, moisturize regularly, and follow medication instructions.",
+      "visit_date": "2025-07-30T22:39:18.842518",
+      "visit_summary": "Eyad reported symptoms of runny nose and sore throat starting 2 days ago. No fever, no difficulty breathing, no ear pain. Thought that it's likely viral upper respiratory infection (common cold). No signs of bacterial infection at this time.",
       "medications": [
         {
-          "name": "Hydrocortisone 1% cream",
-          "dosage": "",
-          "frequency": "twice daily",
-          "instructions": "Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin. Ibuprofen"
+          "name": "Paracetamol 500 mg",
+          "dosage": "500 mg",
+          "frequency": "per day",
+          "duration": "2 days",
+          "instructions": "Take 1 tablet every 6 hours as needed for sore throat or discomfort. Do not exceed 4g per day. May cause liver damage if overdosed."
+        },
+        {
+          "name": "Cetirizine 10 mg",
+          "dosage": "10 mg",
+          "frequency": "daily",
+          "duration": "7 days",
+          "instructions": "Take 1 tablet daily at night for runny nose. May cause drowsiness."
         }
       ],
-      "instructions": "Avoid hot showers, harsh soaps, and scented products. Use fragrance-free laundry detergent. Wear soft, breathable fabrics. Watch for redness, swelling, oozing, or worsening itch.",
-      "next_appointment": "Return in 2\u20133 weeks or sooner if no improvement. Follow-up: Routine dermatology visit. No tests needed at this time.",
-      "created_at": "2025-07-30T23:39:41.403850"
+      "instructions": "Illness is self-limiting, usually resolves in 5\u20137 days. No antibiotics needed. Focus on symptom relief and hydration. Drink plenty of fluids. Rest, avoid cold air and smoke. Use humidifier if available. Watch for: high fever > 38.5\u00b0C, ear pain, shortness of breath, or symptoms lasting >7 days. No restrictions, but reduce physical activity until symptoms improve. Return if no improvement after 7 days, sooner if fever develops or symptoms worsen.",
+      "next_appointment": "No tests needed now.",
+      "created_at": "2025-07-30T22:39:18.842532"
     }
   ],
   "next_visit_record_id": 4
