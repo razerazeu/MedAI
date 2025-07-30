@@ -50,45 +50,25 @@
       "current_symptoms": null,
       "created_at": "2025-07-30T15:22:12.579818"
     },
-    "6": {
-      "id": 6,
-      "name": "Eyad Ayman",
-      "email": "eyadayman1304@gmail.com",
-      "role": "Patient",
-      "medical_history": "VISIT: Discussed skin itching (pruritus), likely due to dry skin or mild eczema. Diagnosis: Mild atopic dermatitis (eczema). Patient should avoid irritants, moisturize regularly, and follow medication instructions. (Medications: Hydrocortisone 1% cream \u2013 Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin. Cetirizine 10 mg \u2013 Take one tablet daily, preferably at night. May cause drowsiness. Emollient (CeraVe, Eucerin, or similar) \u2013 Apply to whole body 2\u20133 times daily, especially after bathing. Post-Visit Instructions: Avoid hot showers, harsh soaps, and scented products. Use fragrance-free laundry detergent. Wear soft, breathable fabrics. Watch for redness, swelling, oozing, or worsening itch. Follow-Up: Return in 2\u20133 weeks or sooner if no improvement. Follow-up: Routine dermatology visit. No tests needed at this time.) - Added by omarhossameldin2016@gmail.com on 2025-07-30",
-      "current_medication": "warfarin, ibuprofen",
-      "current_symptoms": "skin itching",
-      "created_at": "2025-07-30T16:47:25.109325"
-    },
     "7": {
       "id": 7,
       "name": "Eyad Nasif",
       "email": "eyadnasif1304@gmail.com",
       "role": "Patient",
-      "medical_history": "[2025-07-30] Nut allergy\n[2025-07-30] Nut allergy\nMEDICATION: Hydrocortisone 1% cream – Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin. - Added by thebeastgamer789@gmail.com on 2025-07-30\nMEDICATION: Ibuprofen - Added by thebeastgamer789@gmail.com on 2025-07-30\n[2025-07-31] asthma\n[2025-07-30] ankle surgery",
+      "medical_history": "[2025-07-30] Nut allergy\n[2025-07-30] Nut allergy\nMEDICATION: Hydrocortisone 1% cream \u00e2\u20ac\u201c Apply thin layer to affected areas twice daily for 7 days. Do not use on face or broken skin. - Added by thebeastgamer789@gmail.com on 2025-07-30\nMEDICATION: Ibuprofen - Added by thebeastgamer789@gmail.com on 2025-07-30\n[2025-07-31] asthma\n[2025-07-30] ankle surgery",
       "current_medication": "ibuprofen, warfarin, Paracetamol 500 mg - 500 mg - per day; Cetirizine 10 mg - 10 mg - daily",
       "current_symptoms": "runny nose and sore throat",
       "created_at": "2025-07-30T23:11:23.891367"
     },
-    "13": {
-      "id": 13,
-      "name": "eyad test",
-      "email": "testtest@gmail.com",
+    "8": {
+      "id": 8,
+      "name": "Eyad Ayman",
+      "email": "eyadayman1304@gmail.com",
       "role": "Patient",
-      "medical_history": "[2025-07-31] asthma\n[2025-07-31] asthma\n[2025-07-31] asthma",
-      "current_medication": "ibuprofen, warfarin",
+      "medical_history": "[2025-07-31] allergic rhinitis",
+      "current_medication": "Digoxin, Verapamil",
       "current_symptoms": null,
-      "created_at": "2025-07-31T01:06:41.296202"
-    },
-    "14": {
-      "id": 14,
-      "name": "Test eyad 2",
-      "email": "testtest2@gmail.com",
-      "role": "Patient",
-      "medical_history": "[2025-07-31] Nut allergy",
-      "current_medication": "ibuprofen, warfarin",
-      "current_symptoms": null,
-      "created_at": "2025-07-31T01:17:05.689294"
+      "created_at": "2025-07-31T01:54:25.137282"
     }
   },
   "doctors": {
@@ -160,20 +140,6 @@
     },
     {
       "id": 3,
-      "patient_id": 6,
-      "patient_email": "eyadayman1304@gmail.com",
-      "doctor_id": 1,
-      "doctor_email": "omarhossameldin2016@gmail.com",
-      "symptoms": "skin itching",
-      "appointment_date": "2025-07-31T10:00:00",
-      "status": "completed",
-      "appointment_completed": true,
-      "google_event_id": "hq4stq5l2kfimsr57mglu8n5b8",
-      "created_at": "2025-07-30T17:00:05.443965",
-      "completed_at": "2025-07-30T17:10:21.046560"
-    },
-    {
-      "id": 4,
       "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
       "doctor_id": 1,
@@ -185,37 +151,11 @@
       "google_event_id": "a3vklhg0lev96782pkupu2e0ds",
       "created_at": "2025-07-30T18:47:27.897012",
       "completed_at": "2025-07-30T22:34:45.667605"
-    },
-    {
-      "id": 8,
-      "patient_id": 13,
-      "patient_email": "testtest@gmail.com",
-      "doctor_id": 4,
-      "doctor_email": "thebeastgamer789@gmail.com",
-      "symptoms": "sore throat, runny nose",
-      "appointment_date": "2025-08-01T10:00:00",
-      "status": "scheduled",
-      "appointment_completed": false,
-      "google_event_id": "po1srn3ts07noejrlknanom3a0",
-      "created_at": "2025-07-31T01:10:17.367477"
-    },
-    {
-      "id": 9,
-      "patient_id": 14,
-      "patient_email": "testtest2@gmail.com",
-      "doctor_id": 4,
-      "doctor_email": "thebeastgamer789@gmail.com",
-      "symptoms": "sore throat, runny nose",
-      "appointment_date": "2025-08-02T14:30:00",
-      "status": "scheduled",
-      "appointment_completed": false,
-      "google_event_id": "f79upskvve52qtaiil173s87j0",
-      "created_at": "2025-07-31T01:20:11.296564"
     }
   ],
-  "next_patient_id": 15,
+  "next_patient_id": 9,
   "next_doctor_id": 5,
-  "next_appointment_id": 10,
+  "next_appointment_id": 4,
   "post_visit_records": [
     {
       "id": 1,
@@ -234,7 +174,7 @@
           "dosage": "",
           "frequency": "3x/week",
           "duration": "for 2 weeks",
-          "instructions": "Use on scalp and affected skin areas. Leave on for 5 mins before rinsing. May cause dryness—use mild moisturizer after."
+          "instructions": "Use on scalp and affected skin areas. Leave on for 5 mins before rinsing. May cause dryness\u00e2\u20ac\u201duse mild moisturizer after."
         },
         {
           "name": "Hydroxyzine 25 mg",
@@ -250,44 +190,6 @@
     },
     {
       "id": 2,
-      "patient_id": 6,
-      "patient_email": "eyadayman1304@gmail.com",
-      "patient_name": "Eyad Ayman",
-      "doctor_id": 1,
-      "doctor_email": "omarhossameldin2016@gmail.com",
-      "doctor_name": "Omar",
-      "appointment_id": null,
-      "visit_date": "2025-07-30T17:14:22.014208",
-      "visit_summary": "Discussed skin itching (pruritus), likely due to dry skin or mild eczema. Diagnosis: Mild atopic dermatitis (eczema). Patient should avoid irritants, moisturize regularly, and follow medication instructions.",
-      "medications": [
-        {
-          "name": "Hydrocortisone 1% cream",
-          "dosage": "",
-          "frequency": "twice daily",
-          "duration": "for 7 days",
-          "instructions": "Apply thin layer to affected areas. Do not use on face or broken skin."
-        },
-        {
-          "name": "Cetirizine 10 mg",
-          "dosage": "10 mg",
-          "frequency": "daily",
-          "duration": "as needed",
-          "instructions": "Take one tablet daily, preferably at night. May cause drowsiness."
-        },
-        {
-          "name": "Emollient (CeraVe, Eucerin, or similar)",
-          "dosage": "",
-          "frequency": "2-3 times daily",
-          "duration": "ongoing",
-          "instructions": "Apply to whole body, especially after bathing."
-        }
-      ],
-      "instructions": "Avoid hot showers, harsh soaps, and scented products.\nUse fragrance-free laundry detergent.\nWear soft, breathable fabrics.\nWatch for redness, swelling, oozing, or worsening itch.",
-      "next_appointment": "Return in 2\u20133 weeks or sooner if no improvement. Follow-up: Routine dermatology visit. No tests needed at this time.",
-      "created_at": "2025-07-30T17:14:22.014215"
-    },
-    {
-      "id": 3,
       "patient_id": 7,
       "patient_email": "eyadnasif1304@gmail.com",
       "patient_name": "Eyad Nasif",
@@ -318,5 +220,5 @@
       "created_at": "2025-07-30T22:39:18.842532"
     }
   ],
-  "next_visit_record_id": 4
+  "next_visit_record_id": 3
 }
