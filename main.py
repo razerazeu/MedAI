@@ -245,89 +245,103 @@ def get_doctor_appointments(doctor_email: str) -> str:
         return f"Error retrieving appointments: {str(e)}"
 
 @tool
-def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms: str, specialization: str = "General Medicine") -> str:
-    """Book an appointment for a patient with an available doctor based on symptoms and specialization needed."""
+def book_appointment_with_preferred_time(patient_email: str, patient_name: str, symptoms: str, 
+                                       preferred_date: str, preferred_time: str, 
+                                       specialization: str = "General Medicine") -> str:
+    """
+    Book an appointment for a patient at their preferred date and time.
+    Ask the user for their preferred appointment time first, then check doctor availability.
+    
+    Args:
+        patient_email (str): Patient's email
+        patient_name (str): Patient's name
+        symptoms (str): Patient's symptoms
+        preferred_date (str): Preferred date in YYYY-MM-DD format (e.g., "2025-08-01")
+        preferred_time (str): Preferred time in HH:MM format (e.g., "14:30" for 2:30 PM)
+        specialization (str): Required medical specialization
+    
+    Returns:
+        str: Appointment booking result or availability information
+    """
     try:
-        print(f"🔍 Comprehensive duplicate check for {patient_email}...")  # Debug log
+        print(f"🔍 Checking appointment availability for {preferred_date} at {preferred_time}...")
         
-        # COMPREHENSIVE DUPLICATE PREVENTION
+        # Parse the preferred datetime
+        try:
+            appointment_datetime = datetime.strptime(f"{preferred_date} {preferred_time}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return "❌ **Invalid date/time format**\n\nPlease provide:\n• Date in YYYY-MM-DD format (e.g., '2025-08-01')\n• Time in HH:MM format (e.g., '14:30' for 2:30 PM)\n\nTry again with the correct format."
+        
+        # Check if the requested time is in the past
+        if appointment_datetime <= datetime.now():
+            return "❌ **Cannot book appointments in the past**\n\nPlease choose a future date and time.\n\n💡 **Tip**: The earliest available time is usually tomorrow morning."
+        
+        # Check if it's too far in the future (more than 60 days)
+        if appointment_datetime > datetime.now() + timedelta(days=60):
+            return "❌ **Appointment too far in advance**\n\nWe can only book appointments up to 60 days in advance.\n\nPlease choose a date within the next 2 months."
+        
+        # COMPREHENSIVE DUPLICATE PREVENTION (same as original function)
         all_appointments = db.get_appointments()
         
-        # Check 1: Exact same patient with any scheduled appointment in the next 7 days
+        # Check 1: Patient already has scheduled appointment
         patient_scheduled_appointments = [
             apt for apt in all_appointments 
             if apt['patient_email'] == patient_email 
             and apt['status'] == 'scheduled'
-            and (datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - datetime.now()).total_seconds() > 0  # Future appointments
-            and (datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - datetime.now()).total_seconds() < 604800  # Within 7 days
+            and (datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - datetime.now()).total_seconds() > 0
+            and (datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - datetime.now()).total_seconds() < 604800
         ]
         
         if patient_scheduled_appointments:
-            print(f"❌ Patient already has scheduled appointments in the next 7 days")  # Debug log
             existing_apt = patient_scheduled_appointments[0]
             apt_date = datetime.fromisoformat(existing_apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', ''))
-            return f"❌ You already have a scheduled appointment:\n\n📅 **Existing Appointment**\nAppointment ID: {existing_apt['id']}\nDate: {apt_date.strftime('%Y-%m-%d at %I:%M %p')}\nDoctor: {existing_apt['doctor_email']}\nSymptoms: {existing_apt['symptoms']}\n\n⚠️ **Policy**: Only one appointment per patient per week is allowed. Please wait for your current appointment or cancel it first if you need to reschedule."
-        
-        # Check 2: Similar symptoms in the last 24 hours (prevent rapid re-booking)
-        recent_similar_appointments = [
-            apt for apt in all_appointments 
-            if apt['patient_email'] == patient_email 
-            and apt['symptoms'].strip().lower() == symptoms.strip().lower()
-            and apt['status'] in ['scheduled', 'completed']  # Include completed to prevent immediate re-booking
-            and (datetime.now() - datetime.fromisoformat(apt['created_at'].replace('Z', '+00:00').replace('+00:00', ''))).total_seconds() < 86400  # 24 hours
-        ]
-        
-        if recent_similar_appointments:
-            print(f"❌ Similar symptoms appointment found within 24 hours")  # Debug log
-            recent_apt = recent_similar_appointments[0]
-            return f"❌ Similar appointment detected within 24 hours:\n\n📋 **Recent Appointment**\nAppointment ID: {recent_apt['id']}\nSymptoms: {recent_apt['symptoms']}\nStatus: {recent_apt['status']}\n\n⚠️ **Policy**: Cannot book appointments with similar symptoms within 24 hours. Please wait or contact support if this is urgent."
-        
-        # Check 3: Multiple appointments being created rapidly (within 10 minutes)
-        very_recent_appointments = [
-            apt for apt in all_appointments 
-            if apt['patient_email'] == patient_email 
-            and (datetime.now() - datetime.fromisoformat(apt['created_at'].replace('Z', '+00:00').replace('+00:00', ''))).total_seconds() < 600  # 10 minutes
-        ]
-        
-        if very_recent_appointments:
-            print(f"❌ Patient trying to create multiple appointments rapidly")  # Debug log
-            return f"❌ Multiple booking attempt detected!\n\n⚠️ **Policy**: Please wait at least 10 minutes between appointment booking attempts. This prevents accidental duplicate bookings.\n\nYour recent appointment: {very_recent_appointments[0]['id']}"
-        
-        print(f"✅ All duplicate checks passed. Proceeding with booking...")  # Debug log
+            return f"❌ **You already have a scheduled appointment**\n\n📅 **Existing Appointment:**\n• Appointment ID: {existing_apt['id']}\n• Date: {apt_date.strftime('%Y-%m-%d at %I:%M %p')}\n• Doctor: {existing_apt['doctor_email']}\n• Symptoms: {existing_apt['symptoms']}\n\n⚠️ **Policy**: Only one appointment per patient per week is allowed.\n\n💡 **Options**: Cancel your existing appointment first if you need to reschedule."
         
         # Add patient to database if not exists
         patient_id = db.add_patient(patient_email, patient_name)
         
         # Find doctors by specialization
         doctors = db.get_doctors_by_specialization(specialization)
-        print(f"Found {len(doctors)} doctors for specialization '{specialization}': {[d['email'] for d in doctors]}")  # Debug log
         if not doctors:
-            return f"No doctors found for specialization: {specialization}"
+            return f"❌ **No doctors available for {specialization}**\n\nAvailable specializations:\n• General Medicine\n• Dermatology\n• Internal Medicine\n\nPlease try booking with a different specialization."
         
-        selected_doctor = doctors[0]
-        print(f"Selected doctor: {selected_doctor['name']} ({selected_doctor['email']})")  # Debug log
+        # Check availability for each doctor at the requested time
+        available_doctors = []
+        busy_doctors = []
         
-        # Smart scheduling: Find next available slot
-        appointment_time = datetime.now() + timedelta(days=1)  # Start with tomorrow
-        appointment_time = appointment_time.replace(hour=10, minute=0, second=0, microsecond=0)  # 10 AM
-        
-        # Check if the selected time slot is already taken by the doctor
-        doctor_appointments_at_time = [
-            apt for apt in all_appointments
-            if apt['doctor_email'] == selected_doctor['email']
-            and apt['status'] == 'scheduled'
-            and abs((datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - appointment_time).total_seconds()) < 3600  # Within 1 hour
-        ]
-        
-        # If slot is taken, find next available slot
-        while doctor_appointments_at_time and appointment_time < datetime.now() + timedelta(days=30):  # Look up to 30 days ahead
-            appointment_time += timedelta(hours=1)  # Try next hour
-            doctor_appointments_at_time = [
+        for doctor in doctors:
+            # Check if doctor has appointments within 1 hour of requested time
+            doctor_conflicts = [
                 apt for apt in all_appointments
-                if apt['doctor_email'] == selected_doctor['email']
+                if apt['doctor_email'] == doctor['email']
                 and apt['status'] == 'scheduled'
-                and abs((datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - appointment_time).total_seconds()) < 3600
+                and abs((datetime.fromisoformat(apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', '')) - appointment_datetime).total_seconds()) < 3600
             ]
+            
+            if not doctor_conflicts:
+                available_doctors.append(doctor)
+            else:
+                busy_doctors.append((doctor, doctor_conflicts[0]))
+        
+        # If no doctors available at requested time
+        if not available_doctors:
+            response = f"❌ **No doctors available at {preferred_date} {preferred_time}**\n\n"
+            response += f"📋 **Doctors busy at that time:**\n"
+            
+            for doctor, conflict_apt in busy_doctors:
+                conflict_time = datetime.fromisoformat(conflict_apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', ''))
+                response += f"• Dr. {doctor['name']} - Busy at {conflict_time.strftime('%I:%M %p')}\n"
+            
+            response += f"\n💡 **Please try a different time:**\n"
+            response += f"• Try booking 1-2 hours earlier or later\n"
+            response += f"• Consider morning slots (9 AM - 12 PM)\n"
+            response += f"• Consider afternoon slots (2 PM - 5 PM)\n"
+            response += f"\n🔄 **Example**: Try '{preferred_date} 10:00' or '{preferred_date} 15:00'"
+            
+            return response
+        
+        # Book with the first available doctor
+        selected_doctor = available_doctors[0]
         
         # Create Google Calendar event
         try:
@@ -336,8 +350,8 @@ def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms
                 calendar_service,
                 f"Medical Appointment - {patient_name}",
                 f"Patient: {patient_name} ({patient_email})\nSymptoms: {symptoms}",
-                appointment_time,
-                appointment_time + timedelta(hours=1),
+                appointment_datetime,
+                appointment_datetime + timedelta(hours=1),
                 selected_doctor['email']
             )
             google_event_id = event.get('id')
@@ -345,30 +359,14 @@ def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms
             google_event_id = None
             print(f"Calendar error: {e}")
         
-        # Save appointment to database with additional duplicate prevention
-        print(f"Creating appointment for patient {patient_email} with doctor {selected_doctor['email']}...")  # Debug log
-        
-        # Final check: Ensure no appointment was created while we were processing
-        final_check_appointments = db.get_appointments()
-        final_duplicate_check = [
-            apt for apt in final_check_appointments 
-            if apt['patient_email'] == patient_email 
-            and apt['status'] == 'scheduled'
-            and (datetime.now() - datetime.fromisoformat(apt['created_at'].replace('Z', '+00:00').replace('+00:00', ''))).total_seconds() < 60  # Created in last minute
-        ]
-        
-        if final_duplicate_check:
-            print(f"❌ Race condition detected - appointment created during processing")
-            return f"❌ An appointment was just created for you. Please refresh and check your appointments."
-        
+        # Create appointment in database
         appointment_id = db.create_appointment(
-            patient_email,  # Use email directly instead of patient_id
+            patient_email,
             selected_doctor['email'], 
             symptoms, 
-            appointment_time,
+            appointment_datetime,
             google_event_id
         )
-        print(f"Appointment created with ID: {appointment_id}")  # Debug log
         
         # Send email to doctor
         email_subject = f"New Patient Appointment - {patient_name}"
@@ -379,7 +377,7 @@ You have a new patient appointment scheduled:
 
 Patient: {patient_name}
 Email: {patient_email}
-Date & Time: {appointment_time.strftime('%Y-%m-%d at %I:%M %p')}
+Date & Time: {appointment_datetime.strftime('%Y-%m-%d at %I:%M %p')}
 
 SYMPTOMS REPORTED:
 {symptoms}
@@ -392,19 +390,48 @@ MedAI
         send_email_via_google(selected_doctor['email'], email_subject, email_body)
         
         return f"""
-✅ Appointment booked successfully!
+✅ **Appointment booked successfully!**
 
-Patient: {patient_name}
-Doctor: Dr. {selected_doctor['name']} ({selected_doctor['specialization']})
-Date & Time: {appointment_time.strftime('%Y-%m-%d at %I:%M %p')}
-Appointment ID: {appointment_id}
+👤 **Patient:** {patient_name}
+👨‍⚕️ **Doctor:** Dr. {selected_doctor['name']} ({selected_doctor['specialization']})
+📅 **Date & Time:** {appointment_datetime.strftime('%A, %B %d, %Y at %I:%M %p')}
+🆔 **Appointment ID:** {appointment_id}
 
-The doctor has been notified via email with your symptoms.
-You should receive a calendar invitation shortly.
-"""     
+📧 The doctor has been notified via email with your symptoms.
+📱 You should receive a calendar invitation shortly.
+
+💡 **Next Steps:**
+• Arrive 10 minutes early for your appointment
+• Bring any relevant medical documents
+• Prepare a list of current medications
+"""
     except Exception as e:
-        print(f"❌ Error booking appointment: {str(e)}")  # Debug log
-        return f"Error booking appointment: {str(e)}"
+        print(f"❌ Error booking appointment: {str(e)}")
+        return f"❌ **Error booking appointment:** {str(e)}\n\nPlease try again or contact support."
+
+@tool
+def book_appointment_with_doctor(patient_email: str, patient_name: str, symptoms: str, specialization: str = "General Medicine") -> str:
+    """
+    **DEPRECATED**: Use book_appointment_with_preferred_time instead.
+    This function will ask the user for their preferred appointment time.
+    """
+    return """
+🕐 **Please specify your preferred appointment time**
+
+To book your appointment, I need to know when you'd like to schedule it.
+
+📅 **Please provide:**
+• **Preferred date** (e.g., "2025-08-01" for August 1st, 2025)
+• **Preferred time** (e.g., "14:30" for 2:30 PM)
+
+💡 **Example**: "I'd like to book for 2025-08-01 at 10:00"
+
+Once you tell me your preferred time, I'll check if the doctor is available and either:
+✅ Book your appointment immediately
+❌ Suggest alternative times if the doctor is busy
+
+**What date and time would you prefer for your appointment?**
+    """
 
 @tool
 def add_medical_record_after_visit(patient_email: str, record_type: str, description: str, doctor_email: str, additional_details: str = None) -> str:
@@ -492,7 +519,10 @@ def report_current_medications(patient_email: str, complete_medication_list: str
             current_medication=complete_medication_list
         )
         
-        return f"✅ Recorded medication list for {patient['name']} ({patient_email}).\n\nCurrent medications: {complete_medication_list}"
+        # Automatically run drug interaction safety check for newly reported medications
+        safety_result = check_medication_safety.invoke({"patient_email": patient_email, "medications_list": complete_medication_list})
+        
+        return f"✅ Recorded medication list for {patient['name']} ({patient_email}).\n\nCurrent medications: {complete_medication_list}\n\n{safety_result}"
         
     except Exception as e:
         return f"Error reporting current medications: {str(e)}"
@@ -535,7 +565,10 @@ def add_medication_to_patient(patient_email: str, medication_name: str, dosage: 
             current_medication=updated_medication
         )
         
-        return f"✅ Added medication '{medication_name}' to {patient['name']}'s current medication list.\n\nUpdated medications: {updated_medication}"
+        # Automatically run drug interaction safety check for updated medication list
+        safety_result = check_medication_safety.invoke({"patient_email": patient_email, "medications_list": updated_medication})
+        
+        return f"✅ Added medication '{medication_name}' to {patient['name']}'s current medication list.\n\nUpdated medications: {updated_medication}\n\n{safety_result}"
         
     except Exception as e:
         return f"Error adding medication: {str(e)}"
@@ -1668,6 +1701,7 @@ tools = [
     get_doctor_current_patient,
     check_patient_existing_appointments,
     book_appointment_with_doctor,
+    book_appointment_with_preferred_time,
     add_medical_record_after_visit,
     update_patient_information,
     add_medication_to_patient,
@@ -1788,7 +1822,14 @@ COMPREHENSIVE HEALTH INFORMATION GATHERING:
 - **PATIENT SAFETY**: Always emphasize: "Do NOT stop or change medications without professional medical advice"
 
 APPOINTMENT BOOKING:
-- Use book_appointment_with_doctor for scheduling
+- **PRIMARY METHOD**: Use book_appointment_with_preferred_time for all new appointment bookings
+- **ALWAYS ASK FOR PREFERRED TIME**: When patients want to book, ALWAYS ask:
+  * "What date would you prefer? (e.g., 2025-08-01)"
+  * "What time would you prefer? (e.g., 14:30 for 2:30 PM)"
+- **AVAILABILITY CHECKING**: The system will automatically:
+  * Check if the doctor is available at the requested time
+  * Suggest alternative times if the doctor is busy
+  * Handle all duplicate prevention and scheduling conflicts
 - For logged-in users: automatically use their email and name from USER CONTEXT
 - **ALWAYS ASK FOR ALL THREE**: When booking appointments, ALWAYS collect:
   * Current symptoms: "What symptoms are you experiencing?"
@@ -1803,6 +1844,7 @@ APPOINTMENT BOOKING:
   * Cannot book multiple appointments within 10 minutes
   * The booking function will automatically reject duplicates with clear explanations
 - If booking fails due to duplicates, explain the policy and suggest alternatives
+- If requested time is unavailable, suggest 2-3 alternative times
 - Confirm appointment details and explain next steps
 
 APPOINTMENT MANAGEMENT:
