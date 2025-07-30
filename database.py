@@ -324,6 +324,23 @@ class JSONDatabase:
             self.data["patients"][str(patient_id)] = patient
             self.save_data()
 
+    def update_doctor_safe(self, doctor_email: str, updated_data: Dict) -> bool:
+        """Safely update doctor data. PROTECTS specialization field from changes."""
+        doctor = self.get_doctor_by_email(doctor_email)
+        if doctor:
+            doctor_id = doctor["id"]
+            # Merge updated data with existing data, but PROTECT critical fields
+            for key, value in updated_data.items():
+                if key not in ["id", "specialization", "email"]:  # PROTECTED FIELDS
+                    doctor[key] = value
+                # Log any attempt to change protected fields
+                elif key == "specialization":
+                    print(f"WARNING: Attempt to change doctor specialization blocked for {doctor_email}")
+            self.data["doctors"][str(doctor_id)] = doctor
+            self.save_data()
+            return True
+        return False
+
     def add_post_visit_record(self, patient_email: str, doctor_email: str, 
                              visit_summary: str, medications: List[Dict] = None, 
                              instructions: str = None, next_appointment: str = None,
