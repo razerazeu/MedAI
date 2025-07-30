@@ -146,7 +146,7 @@ def find_doctor_by_name(doctor_name: str) -> str:
         
         if len(found_doctors) == 1:
             doctor = found_doctors[0]
-            return f"Found Dr. {doctor['name']}!\nEmail: {doctor['email']}\nSpecialization: {doctor['specialization']}\nDays Available: {doctor.get('days_available', 'Not specified')}"
+            return f"Found Dr. {doctor['name']}!\nEmail: {doctor['email']}\nSpecialization: {doctor['specialization']}"
         
         # Multiple matches
         result = f"Found {len(found_doctors)} doctors matching '{doctor_name}':\n"
@@ -264,22 +264,23 @@ def book_appointment_with_preferred_time(patient_email: str, patient_name: str, 
         str: Appointment booking result or availability information
     """
     try:
-        print(f"🔍 Checking appointment availability for {preferred_date} at {preferred_time}...")
+        print(f"Comprehensive duplicate check for {patient_email}...")  # Debug log
         
-        # Parse the preferred datetime
-        try:
-            appointment_datetime = datetime.strptime(f"{preferred_date} {preferred_time}", "%Y-%m-%d %H:%M")
-        except ValueError:
-            return "❌ **Invalid date/time format**\n\nPlease provide:\n• Date in YYYY-MM-DD format (e.g., '2025-08-01')\n• Time in HH:MM format (e.g., '14:30' for 2:30 PM)\n\nTry again with the correct format."
+        # Parse and validate patient's preferred datetime using natural language
+        appointment_datetime, parse_success, parse_error = parse_natural_language_datetime(
+            preferred_date, preferred_time, datetime.now()
+        )
         
+        if not parse_success:
+            return f"**Invalid Date/Time Format**\n\n{parse_error}\n\n**Examples of valid inputs:**\n- Date: 'today', 'tomorrow', 'next Monday', 'in 3 days', '2025-07-31'\n- Time: '2:30 PM', '14:30', '2 PM', 'noon'"
+
         # Check if the requested time is in the past
         if appointment_datetime <= datetime.now():
-            return "❌ **Cannot book appointments in the past**\n\nPlease choose a future date and time.\n\n💡 **Tip**: The earliest available time is usually tomorrow morning."
-        
+            return f"**Invalid Date/Time**\n\nThe selected appointment time ({appointment_datetime.strftime('%Y-%m-%d at %I:%M %p')}) is in the past.\n\nPlease choose a future date and time."
         # Check if it's too far in the future (more than 60 days)
         if appointment_datetime > datetime.now() + timedelta(days=60):
-            return "❌ **Appointment too far in advance**\n\nWe can only book appointments up to 60 days in advance.\n\nPlease choose a date within the next 2 months."
-        
+            return f"**Date Too Far**\n\nThe selected appointment time is more than 60 days in the future.\n\nPlease choose a date within the next 2 months."
+          
         # COMPREHENSIVE DUPLICATE PREVENTION (same as original function)
         all_appointments = db.get_appointments()
         
@@ -293,9 +294,38 @@ def book_appointment_with_preferred_time(patient_email: str, patient_name: str, 
         ]
         
         if patient_scheduled_appointments:
+
+            print(f"Patient already has scheduled appointments in the next 7 days")  # Debug log
             existing_apt = patient_scheduled_appointments[0]
             apt_date = datetime.fromisoformat(existing_apt['appointment_date'].replace('Z', '+00:00').replace('+00:00', ''))
-            return f"❌ **You already have a scheduled appointment**\n\n📅 **Existing Appointment:**\n• Appointment ID: {existing_apt['id']}\n• Date: {apt_date.strftime('%Y-%m-%d at %I:%M %p')}\n• Doctor: {existing_apt['doctor_email']}\n• Symptoms: {existing_apt['symptoms']}\n\n⚠️ **Policy**: Only one appointment per patient per week is allowed.\n\n💡 **Options**: Cancel your existing appointment first if you need to reschedule."
+            return f"You already have a scheduled appointment:\n\n📅 **Existing Appointment**\nAppointment ID: {existing_apt['id']}\nDate: {apt_date.strftime('%Y-%m-%d at %I:%M %p')}\nDoctor: {existing_apt['doctor_email']}\nSymptoms: {existing_apt['symptoms']}\n\n⚠️ **Policy**: Only one appointment per patient per week is allowed. Please wait for your current appointment or cancel it first if you need to reschedule."
+        
+        # Check 2: Similar symptoms in the last 24 hours (prevent rapid re-booking)
+        recent_similar_appointments = [
+            apt for apt in all_appointments 
+            if apt['patient_email'] == patient_email 
+            and apt['symptoms'].strip().lower() == symptoms.strip().lower()
+            and apt['status'] in ['scheduled', 'completed']  # Include completed to prevent immediate re-booking
+            and (datetime.now() - datetime.fromisoformat(apt['created_at'].replace('Z', '+00:00').replace('+00:00', ''))).total_seconds() < 86400  # 24 hours
+        ]
+        
+        if recent_similar_appointments:
+            print(f"Similar symptoms appointment found within 24 hours")  # Debug log
+            recent_apt = recent_similar_appointments[0]
+            return f"Similar appointment detected within 24 hours:\n\n📋 **Recent Appointment**\nAppointment ID: {recent_apt['id']}\nSymptoms: {recent_apt['symptoms']}\nStatus: {recent_apt['status']}\n\n⚠️ **Policy**: Cannot book appointments with similar symptoms within 24 hours. Please wait or contact support if this is urgent."
+        
+        # Check 3: Multiple appointments being created rapidly (within 10 minutes)
+        very_recent_appointments = [
+            apt for apt in all_appointments 
+            if apt['patient_email'] == patient_email 
+            and (datetime.now() - datetime.fromisoformat(apt['created_at'].replace('Z', '+00:00').replace('+00:00', ''))).total_seconds() < 600  # 10 minutes
+        ]
+        
+        if very_recent_appointments:
+            print(f"Patient trying to create multiple appointments rapidly")  # Debug log
+            return f"Multiple booking attempt detected!\n\n⚠️ **Policy**: Please wait at least 10 minutes between appointment booking attempts. This prevents accidental duplicate bookings.\n\nYour recent appointment: {very_recent_appointments[0]['id']}"
+        
+        print(f"All duplicate checks passed. Proceeding with booking...")  # Debug log
         
         # Add patient to database if not exists
         patient_id = db.add_patient(patient_email, patient_name)
@@ -468,6 +498,54 @@ def add_medical_record_after_visit(patient_email: str, record_type: str, descrip
         
     except Exception as e:
         return f"Error adding medical record: {str(e)}"
+
+@tool
+def check_patient_existing_medical_data(patient_email: str) -> str:
+    """Check if a patient has existing medical history and current medications on file. Use this before asking for medical information to avoid re-asking for data that's already recorded."""
+    try:
+        patient = db.get_patient_by_email(patient_email)
+        if not patient:
+            return f"❌ Patient not found with email: {patient_email}"
+        
+        medical_history = patient.get('medical_history')
+        current_medication = patient.get('current_medication')
+        current_symptoms = patient.get('current_symptoms')
+        
+        result = f"📋 **EXISTING MEDICAL DATA FOR {patient['name']}**\n\n"
+        
+        # Check medical history
+        if medical_history and medical_history.strip():
+            result += f"✅ **Medical History**: {medical_history}\n\n"
+        else:
+            result += f"❌ **Medical History**: Not recorded\n\n"
+        
+        # Check medications
+        if current_medication and current_medication.strip():
+            result += f"✅ **Current Medications**: {current_medication}\n\n"
+        else:
+            result += f"❌ **Current Medications**: Not recorded\n\n"
+        
+        # Check symptoms (usually tied to appointments)
+        if current_symptoms and current_symptoms.strip():
+            result += f"ℹ️ **Last Recorded Symptoms**: {current_symptoms}\n\n"
+        else:
+            result += f"ℹ️ **Current Symptoms**: None recorded\n\n"
+        
+        # Provide guidance
+        has_medical_data = bool(medical_history and medical_history.strip())
+        has_medication_data = bool(current_medication and current_medication.strip())
+        
+        if has_medical_data and has_medication_data:
+            result += "💡 **RECOMMENDATION**: This is an EXISTING patient with complete medical data. Only ask for updates or new information since their last visit."
+        elif has_medical_data or has_medication_data:
+            result += "💡 **RECOMMENDATION**: This patient has PARTIAL medical data. Only ask for the missing information."
+        else:
+            result += "💡 **RECOMMENDATION**: This is a NEW patient or patient with no medical data. Ask for complete medical history and current medications."
+        
+        return result
+        
+    except Exception as e:
+        return f"❌ Error checking patient medical data: {str(e)}"
 
 @tool
 def update_patient_information(patient_email: str, medical_history: str = None) -> str:
@@ -1100,8 +1178,31 @@ def schedule_medication_reminders(patient_email: str, medication_schedule: str, 
             current_medication=updated_medication
         )
         
-        return f"✅ Scheduled {len(calendar_events)} medication reminders for {patient['name']} over {duration_days} days.\n\nMedication Schedule:\n{medication_schedule}\n\nReminders will appear in their calendar daily at 8:00 AM."
+        # Generate response
+        result = f"✅ **MEDICATION REMINDERS SCHEDULED**\n\n"
+        result += f"Patient: {patient['name']} ({patient_email})\n"
+        result += f"Total calendar events created: {len(calendar_events)}\n\n"
         
+        if successful_schedules:
+            result += "📊 **SUCCESSFUL SCHEDULES:**\n"
+            for schedule in successful_schedules:
+                result += f"   ✅ {schedule}\n"
+            result += "\n"
+        
+        if failed_schedules:
+            result += "⚠️ **FAILED SCHEDULES:**\n"
+            for failure in failed_schedules:
+                result += f"{failure}\n"
+            result += "\n"
+        
+        result += "📱 **REMINDER DETAILS:**\n"
+        result += "   • Reminders set for 8:00 AM daily\n"
+        result += "   • Duration based on doctor's prescription\n"
+        result += "   • Patient will receive calendar notifications\n"
+        result += f"   • Prescribed by: Dr. {doctor_email}\n"
+        
+        return result
+
     except Exception as e:
         return f"Error scheduling medication reminders: {str(e)}"
 
@@ -1700,6 +1801,7 @@ tools = [
     get_doctor_appointments,
     get_doctor_current_patient,
     check_patient_existing_appointments,
+    check_patient_existing_medical_data,
     book_appointment_with_doctor,
     book_appointment_with_preferred_time,
     add_medical_record_after_visit,
@@ -1752,7 +1854,11 @@ CURRENT USER CONTEXT:
 PATIENT SELF-IDENTIFICATION:
 - When a patient first interacts, use find_patient_by_name_or_email to locate their profile
 - If they're logged in (see USER CONTEXT above), automatically use their email to identify them
-- Present their current medical information: medical history, current symptoms, current medications
+- **ALWAYS PRESENT EXISTING INFORMATION**: For returning patients, acknowledge their existing data:
+  * "I see from your profile that you have [medical history] and are currently taking [medications]"
+  * "Your medical history shows [conditions/allergies]. Is there anything new since your last visit?"
+  * Only ask for missing information or updates, never re-ask for data that's already recorded
+- **NEW PATIENTS ONLY**: Ask for complete medical profile if no existing data found
 
 AUTOMATIC INFORMATION CAPTURE:
 - ALWAYS use update_patient_information when patients mention:
@@ -1831,10 +1937,30 @@ APPOINTMENT BOOKING:
   * Suggest alternative times if the doctor is busy
   * Handle all duplicate prevention and scheduling conflicts
 - For logged-in users: automatically use their email and name from USER CONTEXT
-- **ALWAYS ASK FOR ALL THREE**: When booking appointments, ALWAYS collect:
-  * Current symptoms: "What symptoms are you experiencing?"
-  * Medical history: "Do you have any medical history, allergies, or past conditions I should know about?"
-  * Current medications: "What medications are you currently taking (including vitamins, supplements)?"
+
+- **SMART INFORMATION COLLECTION**: When booking appointments, first check if patient has existing data:
+  * **FOR NEW PATIENTS** (no existing medical data): Ask for ALL information:
+    - Current symptoms: "What symptoms are you experiencing?"
+    - Medical history: "Do you have any medical history, allergies, or past conditions I should know about?"
+    - Current medications: "What medications are you currently taking (including vitamins, supplements)?"
+  * **FOR EXISTING PATIENTS** (with medical data on file): Only ask for what's missing:
+    - Current symptoms: "What symptoms are you experiencing?" which gets added to the appointment
+    - Review existing data: "I see you have [medical history] and are taking [medications]. Is there anything new since your last visit?"
+    - Only ask for updates if needed, don't re-collect information that's already recorded
+  * **ALWAYS REQUIRED**: Preferred Date and Time for ALL patients:
+    - "What date would you like for your appointment?"
+    - "What time would you prefer?"
+
+**NATURAL LANGUAGE DATE/TIME SUPPORT**: The system now accepts user-friendly date/time formats:
+- **Current Date Context**: Today is {datetime.now().strftime('%A, %B %d, %Y')} - use this for reference when patients say "tomorrow", "next week", etc.
+- **Date Examples**: 'today', 'tomorrow', 'next Monday', 'in 3 days', 'July 31st', or '2025-07-31'
+- **Time Examples**: '2:30 PM', '14:30', '2 PM', 'noon', 'midnight'
+- **User-Friendly Approach**: Let patients express dates/times naturally - don't force strict formats!
+- **Examples of natural requests**:
+  * "I'd like an appointment tomorrow at 2 PM"
+  * "Can I book for next Friday at noon?"
+  * "How about in 3 days at 10:30 AM?"
+
 - Use update_patient_information to save all collected information before booking
 - Ask for preferred specialization only if symptoms are unclear
 - Match symptoms to appropriate medical specializations
@@ -2651,7 +2777,6 @@ if st.session_state.get("show_database", False):
                     with st.expander(f"Dr. {doctor['name']} ({doctor['specialization']})"):
                         st.write(f"**Email:** {doctor['email']}")
                         st.write(f"**Specialization:** {doctor['specialization']}")
-                        st.write(f"**Days Available:** {doctor.get('days_available', 'Not specified')}")
                         st.write(f"**Created:** {doctor.get('created_at', 'Unknown')}")
             else:
                 st.info("No doctors in database yet.")
