@@ -1,0 +1,70 @@
+[
+  {
+    "id": "4fbdc250-a46f-4125-969c-1d93a76bb424",
+    "type": "drug_interaction",
+    "patient_email": "test@email.com",
+    "patient_name": "Test Patient",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "Warfarin",
+      "Aspirin"
+    ],
+    "interactions": [
+      "Warfarin may interact with Aspirin (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-30T15:22:15.037908",
+    "status": "sent"
+  },
+  {
+    "id": "f5d225c8-079d-42f8-a6f4-1c722effe063",
+    "type": "drug_interaction",
+    "patient_email": "bob.demo@email.com",
+    "patient_name": "Bob Demo",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "Vitamin D",
+      "Vitamin C"
+    ],
+    "interactions": [
+      "Vitamin D may interact with Vitamin C (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-30T16:21:27.232978",
+    "status": "sent"
+  },
+  {
+    "id": "463c6b05-958d-4e4e-8188-34905d79f4bb",
+    "type": "drug_interaction",
+    "patient_email": "alice.demo@email.com",
+    "patient_name": "Alice Demo",
+    "doctor_email": "doctor@clinic.com",
+    "medications": [
+      "Vitamin B12",
+      "Calcium"
+    ],
+    "interactions": [
+      "Vitamin B12 may interact with Calcium (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-30T16:23:10.528931",
+    "status": "sent"
+  },
+  {
+    "id": "621e5d50-9c5f-4594-8461-a1e65ec246c4",
+    "type": "drug_interaction",
+    "patient_email": "eyadayman1304@gmail.com",
+    "patient_name": "Eyad Ayman",
+    "doctor_email": "omarhossameldin2016@gmail.com",
+    "medications": [
+      "warfarin",
+      "ibuprofen"
+    ],
+    "interactions": [
+      "warfarin may interact with ibuprofen (based on FDA label warnings)"
+    ],
+    "high_risk": true,
+    "timestamp": "2025-07-30T17:36:29.957016",
+    "status": "sent"
+  }
+]

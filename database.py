@@ -21,6 +21,17 @@ class JSONDatabase:
                         data["next_doctor_id"] = 1
                     if "next_appointment_id" not in data:
                         data["next_appointment_id"] = 1
+                    if "post_visit_records" not in data:
+                        data["post_visit_records"] = []
+                    if "next_visit_record_id" not in data:
+                        data["next_visit_record_id"] = 1
+                    
+                    # Migration: Add appointment_completed flag to existing appointments
+                    if "appointments" in data:
+                        for appointment in data["appointments"]:
+                            if "appointment_completed" not in appointment:
+                                appointment["appointment_completed"] = False
+                    
                     return data
             except:
                 pass
@@ -30,9 +41,11 @@ class JSONDatabase:
             "patients": {},
             "doctors": {},
             "appointments": [],
+            "post_visit_records": [],  # New table for post-visit data
             "next_patient_id": 1,
             "next_doctor_id": 1,
-            "next_appointment_id": 1
+            "next_appointment_id": 1,
+            "next_visit_record_id": 1  # New ID counter for visit records
         }
     
     def save_data(self):
@@ -216,6 +229,7 @@ class JSONDatabase:
             "symptoms": symptoms,
             "appointment_date": appointment_date.isoformat(),
             "status": "scheduled",
+            "appointment_completed": False,  # New flag to track appointment completion
             "google_event_id": google_event_id,
             "created_at": datetime.now().isoformat()
         }
@@ -271,6 +285,33 @@ class JSONDatabase:
                 return True
         return False
     
+    def update_appointment_completion_status(self, appointment_id: int, completed: bool = True) -> bool:
+        """Update appointment completion status."""
+        for appointment in self.data["appointments"]:
+            if appointment["id"] == appointment_id:
+                appointment["appointment_completed"] = completed
+                if completed:
+                    appointment["status"] = "completed"
+                    appointment["completed_at"] = datetime.now().isoformat()
+                self.save_data()
+                return True
+        return False
+    
+    def get_doctor_active_appointment(self, doctor_email: str) -> Optional[Dict]:
+        """Get the doctor's current active (scheduled but not completed) appointment."""
+        doctor_appointments = [
+            apt for apt in self.data["appointments"] 
+            if apt["doctor_email"] == doctor_email 
+            and apt["status"] == "scheduled" 
+            and not apt.get("appointment_completed", False)
+        ]
+        
+        if doctor_appointments:
+            # Sort by appointment date and return the earliest non-completed one
+            doctor_appointments.sort(key=lambda x: x["appointment_date"])
+            return doctor_appointments[0]
+        return None
+    
     def update_patient(self, patient_email: str, updated_data: Dict) -> bool:
         """Update patient data."""
         patient = self.get_patient_by_email(patient_email)
@@ -282,8 +323,102 @@ class JSONDatabase:
                     patient[key] = value
             self.data["patients"][str(patient_id)] = patient
             self.save_data()
-            return True
-        return False
+
+    def add_post_visit_record(self, patient_email: str, doctor_email: str, 
+                             visit_summary: str, medications: List[Dict] = None, 
+                             instructions: str = None, next_appointment: str = None,
+                             appointment_id: int = None) -> int:
+        """Add a comprehensive post-visit record to the database."""
+        try:
+            # Get patient and doctor info
+            patient = self.get_patient_by_email(patient_email)
+            doctor = self.get_doctor_by_email(doctor_email)
+            
+            if not patient or not doctor:
+                raise ValueError(f"Patient or doctor not found")
+            
+            # Create visit record
+            visit_record_id = self.data["next_visit_record_id"]
+            visit_record = {
+                "id": visit_record_id,
+                "patient_id": patient["id"],
+                "patient_email": patient_email,
+                "patient_name": patient["name"],
+                "doctor_id": doctor["id"],
+                "doctor_email": doctor_email,
+                "doctor_name": doctor["name"],
+                "appointment_id": appointment_id,
+                "visit_date": datetime.now().isoformat(),
+                "visit_summary": visit_summary,
+                "medications": medications or [],
+                "instructions": instructions,
+                "next_appointment": next_appointment,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            # Add to database
+            self.data["post_visit_records"].append(visit_record)
+            self.data["next_visit_record_id"] += 1
+            
+            # Update patient's current medication if provided
+            if medications:
+                current_meds = []
+                for med in medications:
+                    if isinstance(med, dict):
+                        current_meds.append(f"{med.get('name', '')} - {med.get('dosage', '')} - {med.get('frequency', '')}")
+                    else:
+                        current_meds.append(str(med))
+                
+                patient["current_medication"] = "; ".join(current_meds)
+                self.data["patients"][str(patient["id"])] = patient
+            
+            self.save_data()
+            return visit_record_id
+            
+        except Exception as e:
+            print(f"Error adding post-visit record: {e}")
+            return None
+
+    def get_patient_visit_history(self, patient_email: str) -> List[Dict]:
+        """Get all visit records for a patient."""
+        visit_history = []
+        for record in self.data["post_visit_records"]:
+            if record["patient_email"] == patient_email:
+                visit_history.append(record)
+        
+        # Sort by visit date (most recent first)
+        visit_history.sort(key=lambda x: x["visit_date"], reverse=True)
+        return visit_history
+
+    def get_doctor_patient_visits(self, doctor_email: str, patient_email: str = None) -> List[Dict]:
+        """Get visit records for a doctor, optionally filtered by patient."""
+        visits = []
+        for record in self.data["post_visit_records"]:
+            if record["doctor_email"] == doctor_email:
+                if patient_email is None or record["patient_email"] == patient_email:
+                    visits.append(record)
+        
+        # Sort by visit date (most recent first)
+        visits.sort(key=lambda x: x["visit_date"], reverse=True)
+        return visits
+
+    def get_patient_current_medications(self, patient_email: str) -> List[Dict]:
+        """Get current medications from the most recent visit."""
+        visit_history = self.get_patient_visit_history(patient_email)
+        
+        if not visit_history:
+            return []
+        
+        # Get medications from most recent visit
+        most_recent_visit = visit_history[0]
+        return most_recent_visit.get("medications", [])
+
+    def get_visit_record_by_id(self, visit_record_id: int) -> Optional[Dict]:
+        """Get a specific visit record by ID."""
+        for record in self.data["post_visit_records"]:
+            if record["id"] == visit_record_id:
+                return record
+        return None
 
 # Create database instance
 db = JSONDatabase()

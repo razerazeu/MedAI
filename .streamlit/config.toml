@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#add8eaff"         # Button color, etc. - light blue
+backgroundColor = "#add8eaff"      # Main background - light blue
+secondaryBackgroundColor = "#ffffff"  # Sidebar background - white
+textColor = "#262730"            # Main text - dark for contrast
+font = "sans serif"              # Options: "sans serif", "serif", or "monospace"
