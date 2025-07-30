@@ -26,6 +26,7 @@ import pytz
 
 from google_calendar_auth import GoogleCalendarManager, authenticate_google_calendar, is_calendar_authenticated
 from gmail_integration import GmailManager, authenticate_gmail, is_gmail_authenticated
+from drug_safety import check_medication_safety, get_drug_interaction_history, get_patient_medications_with_safety_check
 
 load_dotenv()
 
@@ -1581,7 +1582,10 @@ tools = [
     get_patient_visit_history,
     get_patient_current_medications_detailed,
     search_visit_records_by_condition,
-    schedule_medication_reminders_from_visit_data
+    schedule_medication_reminders_from_visit_data,
+    check_medication_safety,
+    get_drug_interaction_history,
+    get_patient_medications_with_safety_check
 ]
 llm_with_tools = llm.bind_tools(tools)
 
@@ -1624,10 +1628,45 @@ AUTOMATIC INFORMATION CAPTURE:
 - Update their profile immediately without asking for confirmation
 - Acknowledge the update: "I've updated your medical profile with this information"
 
+COMPREHENSIVE HEALTH INFORMATION GATHERING:
+- **NEVER ask for just symptoms alone** - always collect the complete picture
+- When patients mention health concerns, ALWAYS ask for ALL THREE:
+  1. "What symptoms are you experiencing?" 
+  2. "What's your medical history - any conditions, surgeries, allergies?"
+  3. "What medications are you currently taking?"
+- This ensures complete patient safety and proper medical assessment
+
+🚨 **DRUG SAFETY & INTERACTION CHECKING:**
+- **IMMEDIATE SAFETY CHECK**: When patients mention ANY medications (new or existing):
+  * Use check_medication_safety with their email and complete medication list
+  * This automatically checks for dangerous drug-drug interactions using FDA data
+  * System will alert doctors immediately for HIGH-RISK interactions via email
+  * Provide clear safety guidance to patients about their medication combinations
+
+- **MEDICATION REVIEW REQUESTS**: When patients ask about their current medications:
+  * Use get_patient_medications_with_safety_check to show their medication list WITH safety assessment
+  * Examples: "What medications am I taking?", "Can you review my medications?", "What's on my medication list?"
+  * This automatically checks their existing medications for interactions and provides safety guidance
+  * Alerts doctors if high-risk interactions are found during the review
+
+- **SAFETY COMMUNICATION**:
+  * If HIGH-RISK interactions found: "🚨 We've detected a potentially serious drug interaction in your medications. Your doctor has been immediately notified. Do not stop or change any medications without consulting your doctor first."
+  * If moderate interactions found: "⚠️ Some of your medications may interact with each other. We'll discuss this during your appointment."
+  * If no interactions: "✅ Your current medications appear to be safe when taken together."
+
+- **MEDICATION HISTORY**: Use get_drug_interaction_history to review previous safety alerts
+- **DOCTOR INTEGRATION**: High-risk interactions trigger automatic emails to the patient's assigned doctor
+- **PATIENT SAFETY**: Always emphasize: "Do NOT stop or change medications without professional medical advice"
+
 APPOINTMENT BOOKING:
 - Use book_appointment_with_doctor for scheduling
 - For logged-in users: automatically use their email and name from USER CONTEXT
-- Ask only for: symptoms description, preferred specialization (if specific)
+- **ALWAYS ASK FOR ALL THREE**: When booking appointments, ALWAYS collect:
+  * Current symptoms: "What symptoms are you experiencing?"
+  * Medical history: "Do you have any medical history, allergies, or past conditions I should know about?"
+  * Current medications: "What medications are you currently taking (including vitamins, supplements)?"
+- Use update_patient_information to save all collected information before booking
+- Ask for preferred specialization only if symptoms are unclear
 - Match symptoms to appropriate medical specializations
 - STRICT DUPLICATE PREVENTION: The system has comprehensive duplicate prevention
   * Only ONE appointment per patient per week is allowed
@@ -1806,6 +1845,13 @@ CLINICAL DECISION SUPPORT:
 - Use MedlinePlus for medical reference information
 - Provide evidence-based information to support clinical decisions
 - Access drug information, treatment guidelines, diagnostic criteria
+
+🚨 **DRUG SAFETY SUPPORT FOR DOCTORS:**
+- **AUTOMATIC SAFETY ALERTS**: When patients mention medications, the system automatically checks for interactions
+- **HIGH-RISK NOTIFICATIONS**: Doctors receive immediate email alerts for dangerous drug combinations
+- **PRESCRIBING SAFETY**: Before prescribing new medications, remind doctors to check current patient medications for interactions
+- **ALERT HISTORY**: Use get_drug_interaction_history to review previous safety alerts for any patient
+- **INTEGRATION WITH VISITS**: Drug interaction alerts are automatically logged and can be referenced during consultations
 
 === COMPREHENSIVE EMAIL & SCHEDULING SYSTEM ===
 
